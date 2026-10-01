@@ -1,6 +1,6 @@
 import '../protocol/book_source_protocol.dart';
 
-enum BookSourceProtocolKind { orsp, legado }
+enum BookSourceProtocolKind { orsp, legado, xbs }
 
 class RegisteredBookSource {
   final String id;
@@ -76,6 +76,7 @@ class RegisteredBookSource {
   factory RegisteredBookSource.fromJson(Map<String, dynamic> json) {
     final sourceProtocol = switch (json['sourceProtocol']) {
       'legado' => BookSourceProtocolKind.legado,
+      'xbs' => BookSourceProtocolKind.xbs,
       _ => BookSourceProtocolKind.orsp,
     };
     final id = _requiredStoredString(json, 'id');
@@ -101,8 +102,7 @@ class RegisteredBookSource {
             (key, value) => MapEntry('$key', value),
           )
         : null;
-    if (sourceProtocol == BookSourceProtocolKind.legado &&
-        sourceConfig == null) {
+    if (sourceProtocol != BookSourceProtocolKind.orsp && sourceConfig == null) {
       throw const BookSourceProtocolException(
         'Stored compatible book source is missing its source configuration.',
       );

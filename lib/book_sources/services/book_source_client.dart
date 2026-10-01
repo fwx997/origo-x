@@ -6,11 +6,13 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../services/core/app_settings_service.dart';
 import '../legado/legado_runtime.dart';
+import '../xbs/xbs_runtime.dart';
 import '../models/registered_book_source.dart';
 import '../protocol/book_source_protocol.dart';
 import 'book_download_cancellation.dart';
 import 'book_source_chapter_cache.dart';
 import 'book_source_network_policy.dart';
+import 'source_task_pool.dart';
 
 class DiscoveredBookSource {
   final Uri manifestUrl;
@@ -27,6 +29,8 @@ class BookSourceClient {
   final BookSourceChapterCache _chapterCache;
   final BookSourceNetworkPolicy _networkPolicy;
   LegadoRuntime? _legadoRuntime;
+  XbsRuntime? _xbsRuntime;
+  XbsRuntime get _xbs => _xbsRuntime ??= XbsRuntime();
 
   /// 单次响应体上限。书源返回的都是 JSON 元数据/章节文本，
   /// 超过该值基本可以判定为异常或恶意响应，中途截断防止 OOM。
@@ -70,6 +74,7 @@ class BookSourceClient {
 
   void close({bool force = true}) {
     _legadoRuntime?.close(force: force);
+    _xbsRuntime?.close(force: force);
     _dio.close(force: force);
   }
 
@@ -86,6 +91,22 @@ class BookSourceClient {
   Future<Object?> _getBounded(
     Uri uri, {
     int maxBytes = maxResponseBytes,
+    Duration? receiveTimeout,
+    BookDownloadCancellation? cancellation,
+  }) => SourceTaskPool.network.run(
+    uri.host,
+    () => _getBoundedNow(
+      uri,
+      maxBytes: maxBytes,
+      receiveTimeout: receiveTimeout,
+      cancellation: cancellation ?? SourceTaskContext.cancellation,
+    ),
+    cancellation: cancellation ?? SourceTaskContext.cancellation,
+  );
+
+  Future<Object?> _getBoundedNow(
+    Uri uri, {
+    required int maxBytes,
     Duration? receiveTimeout,
     BookDownloadCancellation? cancellation,
   }) async {
@@ -176,6 +197,9 @@ class BookSourceClient {
     int page = 1,
     int pageSize = 20,
   }) async {
+    if (source.sourceProtocol == BookSourceProtocolKind.xbs) {
+      return _xbs.search(source, query, page: page, pageSize: pageSize);
+    }
     if (source.sourceProtocol == BookSourceProtocolKind.legado) {
       await _ensureAdditionalProtocolsEnabled();
       return _legado.search(source, query, page: page, pageSize: pageSize);
@@ -207,6 +231,9 @@ class BookSourceClient {
   Future<BookSourceDiscoveryPage> getDiscovery(
     RegisteredBookSource source,
   ) async {
+    if (source.sourceProtocol == BookSourceProtocolKind.xbs) {
+      return _xbs.getDiscovery(source);
+    }
     if (!source.capabilities.contains('discover')) {
       throw const BookSourceProtocolException(
         'This source does not support discovery.',
@@ -228,6 +255,9 @@ class BookSourceClient {
   Future<List<BookSourceCategory>> getCategories(
     RegisteredBookSource source,
   ) async {
+    if (source.sourceProtocol == BookSourceProtocolKind.xbs) {
+      return _xbs.getCategories(source);
+    }
     if (!source.capabilities.contains('categories')) {
       throw const BookSourceProtocolException(
         'This source does not support categories.',
@@ -262,6 +292,14 @@ class BookSourceClient {
     int page = 1,
     int pageSize = 20,
   }) async {
+    if (source.sourceProtocol == BookSourceProtocolKind.xbs) {
+      return _xbs.browse(
+        source,
+        category: category,
+        page: page,
+        pageSize: pageSize,
+      );
+    }
     if (!source.capabilities.contains('browse')) {
       throw const BookSourceProtocolException(
         'This source does not support browsing.',
@@ -292,6 +330,9 @@ class BookSourceClient {
     RegisteredBookSource source,
     String bookId,
   ) async {
+    if (source.sourceProtocol == BookSourceProtocolKind.xbs) {
+      return _xbs.getBook(source, bookId);
+    }
     if (source.sourceProtocol == BookSourceProtocolKind.legado) {
       await _ensureAdditionalProtocolsEnabled();
       return _legado.getBook(source, bookId);
@@ -322,6 +363,9 @@ class BookSourceClient {
     RegisteredBookSource source,
     String bookId,
   ) async {
+    if (source.sourceProtocol == BookSourceProtocolKind.xbs) {
+      return _xbs.getChapters(source, bookId);
+    }
     if (source.sourceProtocol == BookSourceProtocolKind.legado) {
       await _ensureAdditionalProtocolsEnabled();
       return _legado.getChapters(source, bookId);
@@ -347,6 +391,12 @@ class BookSourceClient {
     String bookId, {
     BookDownloadCancellation? cancellation,
   }) async {
+    if (source.sourceProtocol == BookSourceProtocolKind.xbs) {
+      return SourceTaskContext.run(
+        cancellation ?? BookDownloadCancellation(),
+        () => _xbs.getChapters(source, bookId),
+      );
+    }
     if (source.sourceProtocol == BookSourceProtocolKind.legado) {
       cancellation?.throwIfCancelled();
       await _ensureAdditionalProtocolsEnabled();
@@ -457,6 +507,13 @@ class BookSourceClient {
     required String bookId,
     required String chapterId,
   }) async {
+    if (source.sourceProtocol == BookSourceProtocolKind.xbs) {
+      return _xbs.getChapterContent(
+        source,
+        bookId: bookId,
+        chapterId: chapterId,
+      );
+    }
     if (source.sourceProtocol == BookSourceProtocolKind.legado) {
       await _ensureAdditionalProtocolsEnabled();
       return _legado.getChapterContent(
@@ -498,6 +555,16 @@ class BookSourceClient {
     required String chapterId,
     BookDownloadCancellation? cancellation,
   }) async {
+    if (source.sourceProtocol == BookSourceProtocolKind.xbs) {
+      return SourceTaskContext.run(
+        cancellation ?? BookDownloadCancellation(),
+        () => _xbs.getChapterContent(
+          source,
+          bookId: bookId,
+          chapterId: chapterId,
+        ),
+      );
+    }
     if (source.sourceProtocol == BookSourceProtocolKind.legado) {
       cancellation?.throwIfCancelled();
       await _ensureAdditionalProtocolsEnabled();

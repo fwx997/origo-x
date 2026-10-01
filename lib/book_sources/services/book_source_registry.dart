@@ -12,7 +12,7 @@ class BookSourceRegistry {
   static const String _storageKey = 'open_reading_book_sources_v1';
   static final StreamController<void> _changesController =
       StreamController<void>.broadcast();
-  static Future<void> _mutationTail = Future<void>.value();
+  static Future<void>? _mutationTail;
 
   Stream<void> get changes => _changesController.stream;
 
@@ -49,6 +49,7 @@ class BookSourceRegistry {
           .where(
             (source) =>
                 source.sourceProtocol == BookSourceProtocolKind.orsp ||
+                source.sourceProtocol == BookSourceProtocolKind.xbs ||
                 (source.capabilities.isNotEmpty &&
                     source.sourceConfig?['_openReadingReadingChainVerifiedAt']
                         is String),
@@ -68,7 +69,9 @@ class BookSourceRegistry {
     final sources = await load();
     if (additionalEnabled) return sources;
     return sources
-        .where((source) => source.sourceProtocol == BookSourceProtocolKind.orsp)
+        .where(
+          (source) => source.sourceProtocol != BookSourceProtocolKind.legado,
+        )
         .toList(growable: false);
   }
 
@@ -166,7 +169,7 @@ class BookSourceRegistry {
           languages: source.languages,
           capabilities: source.capabilities,
           maxCatalogPageSize: source.maxCatalogPageSize,
-          enabled: source.enabled && source.capabilities.isNotEmpty,
+          enabled: previous.enabled,
           addedAt: previous.addedAt,
           sourceProtocol: source.sourceProtocol,
           sourceConfig: source.sourceConfig,
@@ -280,17 +283,20 @@ class BookSourceRegistry {
   }
 
   Future<T> _mutate<T>(Future<T> Function() action) {
-    final completer = Completer<T>();
-    Future<void> run(_) async {
-      try {
-        completer.complete(await action());
-      } catch (error, stackTrace) {
-        completer.completeError(error, stackTrace);
-      }
-    }
-
-    _mutationTail = _mutationTail.then<void>(run, onError: run);
-    return completer.future;
+    final previous = _mutationTail;
+    final operation = previous == null
+        ? Future<T>.sync(action)
+        : previous.then((_) => action());
+    final tail = operation.then<void>(
+      (_) {},
+      onError: (Object _, StackTrace _) {},
+    );
+    _mutationTail = tail;
+    return tail.then((_) {
+      // An idle queue must not retain a completed future from a retired Zone.
+      if (identical(_mutationTail, tail)) _mutationTail = null;
+      return operation;
+    });
   }
 
   Future<void> _save(List<RegisteredBookSource> sources) async {

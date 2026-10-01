@@ -4,15 +4,18 @@ import 'dart:typed_data';
 import '../legado/legado_source_import_service.dart';
 import '../models/registered_book_source.dart';
 import '../protocol/book_source_protocol.dart';
+import '../xbs/xbs_source.dart';
 import 'book_source_client.dart';
 
-enum BookSourceImportKind { orsp, additional }
+enum BookSourceImportKind { orsp, additional, xbs }
 
 class BookSourceImportAnalysis {
   const BookSourceImportAnalysis._({
     required this.kind,
     required this.sources,
     this.additionalPreview,
+    this.errors = const [],
+    this.excludedMedia = 0,
   });
 
   factory BookSourceImportAnalysis.orsp(RegisteredBookSource source) {
@@ -33,6 +36,20 @@ class BookSourceImportAnalysis {
   final BookSourceImportKind kind;
   final List<RegisteredBookSource> sources;
   final LegadoImportPreview? additionalPreview;
+  final List<String> errors;
+  final int excludedMedia;
+
+  factory BookSourceImportAnalysis.xbs(XbsImportResult result) {
+    return BookSourceImportAnalysis._(
+      kind: BookSourceImportKind.xbs,
+      sources: result.sources
+          .where((s) => s.type == 'text')
+          .map((s) => s.toRegisteredSource())
+          .toList(),
+      errors: result.errors,
+      excludedMedia: result.sources.where((s) => s.type != 'text').length,
+    );
+  }
 }
 
 class BookSourceImportAnalyzer {
@@ -90,9 +107,20 @@ class BookSourceImportAnalyzer {
     }
     late final Object? decoded;
     try {
-      decoded = jsonDecode(utf8.decode(bytes, allowMalformed: false));
+      decoded = jsonDecode(
+        utf8.decode(bytes, allowMalformed: false).replaceFirst('\ufeff', ''),
+      );
     } on FormatException catch (error) {
+      try {
+        return BookSourceImportAnalysis.xbs(XbsSourceFile.parse(bytes));
+      } on FormatException {
+        // Keep the useful JSON error when neither format can be decoded.
+      }
       throw FormatException('Source JSON is invalid: ${error.message}');
+    }
+
+    if (XbsSourceFile.recognizes(decoded)) {
+      return BookSourceImportAnalysis.xbs(XbsSourceFile.fromJson(decoded));
     }
 
     if (decoded is Map && decoded['protocol'] == openReadingSourceProtocol) {

@@ -62,6 +62,19 @@
 				<string>application/epub+zip</string>
 			</dict>
 		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>org.openreading.xbs-source</string>
+			<key>UTTypeDescription</key>
+			<string>Xiangse Book Source</string>
+			<key>UTTypeConformsTo</key>
+			<array><string>public.data</string></array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array><string>xbs</string></array>
+			</dict>
+		</dict>
 	</array>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
@@ -111,18 +124,6 @@
 	<true/>
 	<key>LSSupportsOpeningDocumentsInPlace</key>
 	<true/>
-	<key>NSUbiquitousContainers</key>
-	<dict>
-		<key>iCloud.com.niki.xxread</key>
-		<dict>
-			<key>NSUbiquitousContainerIsDocumentScopePublic</key>
-			<true/>
-			<key>NSUbiquitousContainerName</key>
-			<string>Open Reading</string>
-			<key>NSUbiquitousContainerSupportedFolderLevels</key>
-			<string>Any</string>
-		</dict>
-	</dict>
 	<key>UIStatusBarStyle</key>
 	<string>UIStatusBarStyleDarkContent</string>
 	<key>UIViewControllerBasedStatusBarAppearance</key>

@@ -53,6 +53,11 @@ dependencies:
 
   # 数据处理
   html: ^0.15.6
+  fjs: 3.3.2
+  xpath_selector:
+    path: packages/xpath_selector
+  xpath_selector_html_parser:
+    path: packages/xpath_selector_html_parser
 
   # UI
   fl_chart: ^1.2.0

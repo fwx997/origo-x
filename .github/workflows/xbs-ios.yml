@@ -1,0 +1,77 @@
+name: XBS iOS preview
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [feat/xiangse-xbs]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: xbs-ios-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ios:
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2
+        with:
+          flutter-version: '3.44.4'
+          channel: stable
+          cache: true
+      - name: Resolve locked dependencies
+        run: flutter pub get --enforce-lockfile
+      - name: Check source integration
+        run: |
+          flutter analyze --no-fatal-infos --no-fatal-warnings
+          flutter test test/source_task_pool_test.dart test/xbs_runtime_test.dart test/book_search_filter_test.dart test/source_finding_flows_test.dart test/source_ui_layout_test.dart test/source_search_incremental_test.dart test/book_source_search_page_test.dart test/book_source_discovery_page_test.dart test/book_source_management_page_test.dart test/webdav_online_content_sync_test.dart
+      - name: Build unsigned iOS app
+        run: flutter build ios --release --no-codesign --build-number=${{ github.run_number }}
+      - name: Verify iOS payload
+        run: |
+          app=build/ios/iphoneos/Runner.app
+          test -s "$app/Runner"
+          test -s "$app/Frameworks/App.framework/App"
+          test -s "$app/Frameworks/Flutter.framework/Flutter"
+          test -s "$app/Frameworks/fjs.framework/fjs"
+          lipo -verify_arch arm64 "$app/Runner"
+          lipo -verify_arch arm64 "$app/Frameworks/fjs.framework/fjs"
+          plutil -lint "$app/Info.plist"
+      - name: Package unsigned IPA
+        run: |
+          mkdir -p build/xbs-preview/Payload
+          cp -R build/ios/iphoneos/Runner.app build/xbs-preview/Payload/
+          cp docs/XBS_IOS_PREVIEW.zh-CN.md build/xbs-preview/README.zh-CN.md
+          printf '%s\n' '${{ github.sha }}' > build/xbs-preview/SOURCE_COMMIT.txt
+          cd build/xbs-preview
+          zip -q -r Origo-X-XBS-unsigned.ipa Payload
+          unzip -tq Origo-X-XBS-unsigned.ipa
+          shasum -a 256 Origo-X-XBS-unsigned.ipa > SHA256SUMS.txt
+      - name: Upload preview
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: Origo-X-XBS-${{ github.sha }}
+          path: |
+            build/xbs-preview/*.ipa
+            build/xbs-preview/SHA256SUMS.txt
+            build/xbs-preview/README.zh-CN.md
+            build/xbs-preview/SOURCE_COMMIT.txt
+          if-no-files-found: error
+          retention-days: 14
+      - name: Publish preview release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release create "xbs-preview-${{ github.run_number }}-${{ github.run_attempt }}" \
+            --target '${{ github.sha }}' --prerelease \
+            --title 'Origo X XBS iOS preview #${{ github.run_number }}' \
+            --notes-file docs/XBS_IOS_PREVIEW.zh-CN.md \
+            build/xbs-preview/Origo-X-XBS-unsigned.ipa \
+            build/xbs-preview/SHA256SUMS.txt \
+            build/xbs-preview/README.zh-CN.md \
+            build/xbs-preview/SOURCE_COMMIT.txt

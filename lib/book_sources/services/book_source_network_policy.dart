@@ -54,9 +54,45 @@ class BookSourceNetworkPolicy {
           ? uri
           : Uri(scheme: 'http', host: targetHost, port: targetPort);
       final addresses = await resolve(targetUri);
-      return Socket.startConnect(addresses.first, targetPort);
+      final task = await Socket.startConnect(addresses.first, targetPort);
+      if (uri.scheme != 'https' || proxyHost != null) return task;
+      return _secureConnection(task, uri.host);
     };
     return client;
+  }
+
+  // A custom connectionFactory owns TLS as well as TCP. Keep the validated
+  // address pinned while using the original hostname for SNI and certificates.
+  ConnectionTask<Socket> _secureConnection(
+    ConnectionTask<Socket> task,
+    String host,
+  ) {
+    Socket? active;
+    var cancelled = false;
+    final future = task.socket.then<Socket>((socket) async {
+      active = socket;
+      if (cancelled) {
+        socket.destroy();
+        throw const SocketException('Connection cancelled');
+      }
+      try {
+        final secure = await SecureSocket.secure(socket, host: host);
+        active = secure;
+        if (cancelled) {
+          secure.destroy();
+          throw const SocketException('Connection cancelled');
+        }
+        return secure;
+      } catch (_) {
+        socket.destroy();
+        rethrow;
+      }
+    });
+    return ConnectionTask.fromSocket(future, () {
+      cancelled = true;
+      task.cancel();
+      active?.destroy();
+    });
   }
 
   static bool isBlockedAddress(

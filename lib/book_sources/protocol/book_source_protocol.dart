@@ -210,8 +210,13 @@ class BookSourceDiscoveryPage {
 class BookSourceCategory {
   final String id;
   final String name;
+  final List<BookSourceFilterGroup> filterGroups;
 
-  const BookSourceCategory({required this.id, required this.name});
+  const BookSourceCategory({
+    required this.id,
+    required this.name,
+    this.filterGroups = const [],
+  });
 
   factory BookSourceCategory.fromJson(Map<String, dynamic> json) {
     return BookSourceCategory(
@@ -219,6 +224,31 @@ class BookSourceCategory {
       name: _requiredString(json, 'name'),
     );
   }
+}
+
+class BookSourceFilterGroup {
+  final String id;
+  final String name;
+  final List<BookSourceFilterOption> options;
+
+  const BookSourceFilterGroup({
+    required this.id,
+    required this.name,
+    required this.options,
+  });
+}
+
+class BookSourceFilterOption {
+  final String name;
+  final String value;
+  final Object? requestValue;
+  Object get parameterValue => requestValue ?? value;
+
+  const BookSourceFilterOption({
+    required this.name,
+    required this.value,
+    this.requestValue,
+  });
 }
 
 class BookSourceBook {

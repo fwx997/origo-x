@@ -127,11 +127,13 @@ class SourcedBookCard extends StatelessWidget {
 class SourcedBookListTile extends StatelessWidget {
   final SourcedBook result;
   final VoidCallback onTap;
+  final Widget? footer;
 
   const SourcedBookListTile({
     super.key,
     required this.result,
     required this.onTap,
+    this.footer,
   });
 
   @override
@@ -189,6 +191,7 @@ class SourcedBookListTile extends StatelessWidget {
                       ),
                     ),
                   ],
+                  if (footer != null) ...[const SizedBox(height: 4), footer!],
                 ],
               ),
             ),
@@ -235,11 +238,13 @@ class SourcedBookActions {
   final BuildContext context;
   final BookSourceClient client;
   final BookSourceShelfService shelfService;
+  final void Function(SourcedBook book)? onFindSources;
 
   const SourcedBookActions({
     required this.context,
     required this.client,
     required this.shelfService,
+    this.onFindSources,
   });
 
   void showBookDetails(SourcedBook result) {
@@ -261,6 +266,7 @@ class SourcedBookActions {
           result: result,
           client: client,
           shelfService: shelfService,
+          onFindSources: onFindSources,
           onRead: (book) =>
               _openReader(SourcedBook(source: result.source, book: book)),
           onDownloadContinuesInBackground: () {
@@ -295,6 +301,7 @@ class _SourcedBookDetailsLoader extends StatefulWidget {
     required this.shelfService,
     required this.onRead,
     required this.onDownloadContinuesInBackground,
+    this.onFindSources,
   });
 
   final SourcedBook result;
@@ -302,6 +309,7 @@ class _SourcedBookDetailsLoader extends StatefulWidget {
   final BookSourceShelfService shelfService;
   final Future<void> Function(BookSourceBook book) onRead;
   final VoidCallback onDownloadContinuesInBackground;
+  final void Function(SourcedBook book)? onFindSources;
 
   @override
   State<_SourcedBookDetailsLoader> createState() =>
@@ -336,6 +344,9 @@ class _SourcedBookDetailsLoaderState extends State<_SourcedBookDetailsLoader> {
       key: ValueKey(_book.id),
       result: result,
       shelfService: widget.shelfService,
+      onFindSources: widget.onFindSources == null
+          ? null
+          : () => widget.onFindSources!(result),
       onRead: () => widget.onRead(result.book),
       onDownloadContinuesInBackground: widget.onDownloadContinuesInBackground,
     );
@@ -360,12 +371,14 @@ class _SourcedBookDetailsSheet extends StatefulWidget {
     required this.shelfService,
     required this.onRead,
     required this.onDownloadContinuesInBackground,
+    this.onFindSources,
   });
 
   final SourcedBook result;
   final BookSourceShelfService shelfService;
   final Future<void> Function() onRead;
   final VoidCallback onDownloadContinuesInBackground;
+  final VoidCallback? onFindSources;
 
   @override
   State<_SourcedBookDetailsSheet> createState() =>
@@ -594,6 +607,16 @@ class _SourcedBookDetailsSheetState extends State<_SourcedBookDetailsSheet> {
           ),
         ),
         const SizedBox(height: 14),
+        if (widget.onFindSources != null)
+          OutlinedButton.icon(
+            key: const Key('bookSourceFindOtherSources'),
+            onPressed: () {
+              Navigator.of(context).pop();
+              widget.onFindSources!();
+            },
+            icon: const Icon(Icons.manage_search),
+            label: const Text('查找其他书源'),
+          ),
         Row(
           children: [
             Expanded(

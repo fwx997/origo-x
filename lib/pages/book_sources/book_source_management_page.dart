@@ -11,6 +11,9 @@ import 'package:xxread/book_sources/protocol/book_source_protocol.dart';
 import 'package:xxread/book_sources/services/book_source_client.dart';
 import 'package:xxread/book_sources/services/book_source_import_analyzer.dart';
 import 'package:xxread/book_sources/services/book_source_registry.dart';
+import 'package:xxread/book_sources/services/book_download_cancellation.dart';
+import 'package:xxread/book_sources/services/source_health_check.dart';
+import 'widgets/source_check_dialog.dart';
 import 'package:xxread/services/core/app_settings_service.dart';
 import 'package:xxread/utils/layout_helper.dart';
 import 'package:xxread/utils/localization_extension.dart';
@@ -49,6 +52,10 @@ class _BookSourceManagementPageState extends State<BookSourceManagementPage> {
   final Set<String> _selectedSourceIds = {};
   bool _loading = true;
   bool _selectionMode = false;
+  String _filter = '';
+  bool _checking = false;
+  BookDownloadCancellation? _checkCancellation;
+  final Map<String, SourceHealthResult> _health = {};
 
   @override
   void initState() {
@@ -65,8 +72,48 @@ class _BookSourceManagementPageState extends State<BookSourceManagementPage> {
     });
   }
 
+  void _stopHealthCheck() {
+    _checkCancellation?.cancel();
+    setState(() => _checking = false);
+  }
+
+  Future<void> _startHealthCheck() async {
+    final options = await showDialog<SourceCheckOptions>(
+      context: context,
+      builder: (_) => const SourceCheckDialog(),
+    );
+    if (!mounted || options == null) return;
+    final sources = _sources
+        .where(
+          (s) => _selectedSourceIds.isEmpty
+              ? s.enabled
+              : _selectedSourceIds.contains(s.id),
+        )
+        .toList();
+    final cancellation = BookDownloadCancellation();
+    _checkCancellation = cancellation;
+    setState(() {
+      _checking = true;
+      _health.clear();
+    });
+    await SourceHealthCheck(_sourceClient).run(
+      sources,
+      options.query,
+      cancellation: cancellation,
+      fullChain: options.fullChain,
+      onResult: (result) {
+        if (!mounted || cancellation.isCancelled) return;
+        setState(() => _health[result.sourceId] = result);
+      },
+    );
+    if (mounted && identical(cancellation, _checkCancellation)) {
+      setState(() => _checking = false);
+    }
+  }
+
   @override
   void dispose() {
+    _checkCancellation?.cancel();
     _client?.close();
     _importService?.close();
     _sourceVerifier?.close();
@@ -88,6 +135,11 @@ class _BookSourceManagementPageState extends State<BookSourceManagementPage> {
       appBar: AppBar(
         title: Text(context.l10n.bookSourceManagementTitle),
         actions: [
+          IconButton(
+            tooltip: _checking ? '停止检测' : '批量检测',
+            icon: Icon(_checking ? Icons.stop_circle_outlined : Icons.speed),
+            onPressed: _checking ? _stopHealthCheck : _startHealthCheck,
+          ),
           IconButton(
             tooltip: context.l10n.bookSourcesAdd,
             onPressed: _showAddSourceDialog,
@@ -150,6 +202,15 @@ class _BookSourceManagementPageState extends State<BookSourceManagementPage> {
                         ],
                       ),
                       const SizedBox(height: 12),
+                      TextField(
+                        decoration: const InputDecoration(
+                          hintText: '筛选书源名称或域名',
+                          prefixIcon: Icon(Icons.search),
+                        ),
+                        onChanged: (text) =>
+                            setState(() => _filter = text.trim().toLowerCase()),
+                      ),
+                      if (_checking) const LinearProgressIndicator(),
                       if (_selectionMode) ...[
                         _buildBulkActions(additionalProtocolsEnabled),
                         const SizedBox(height: 12),
@@ -208,10 +269,13 @@ class _BookSourceManagementPageState extends State<BookSourceManagementPage> {
   }
 
   List<Widget> _buildSourceGroups(bool additionalProtocolsEnabled) {
-    final orsp = _sources
+    final filtered = _sources.where(
+      (s) => '${s.name} ${s.apiBaseUrl.host}'.toLowerCase().contains(_filter),
+    );
+    final orsp = filtered
         .where((source) => source.sourceProtocol == BookSourceProtocolKind.orsp)
         .toList(growable: false);
-    final additional = _sources
+    final additional = filtered
         .where((source) => source.sourceProtocol != BookSourceProtocolKind.orsp)
         .toList(growable: false);
     return [
@@ -303,7 +367,7 @@ class _BookSourceManagementPageState extends State<BookSourceManagementPage> {
           (source) =>
               _selectedSourceIds.contains(source.id) &&
               (!enabled ||
-                  source.sourceProtocol == BookSourceProtocolKind.orsp ||
+                  source.sourceProtocol != BookSourceProtocolKind.legado ||
                   additionalProtocolsEnabled),
         )
         .map((source) => source.id);
@@ -388,7 +452,7 @@ class _BookSourceManagementPageState extends State<BookSourceManagementPage> {
     final scheme = Theme.of(context).colorScheme;
     final canEnable =
         source.capabilities.isNotEmpty &&
-        (source.sourceProtocol == BookSourceProtocolKind.orsp ||
+        (source.sourceProtocol != BookSourceProtocolKind.legado ||
             additionalProtocolsEnabled);
     final selected = _selectedSourceIds.contains(source.id);
     return Padding(
@@ -532,6 +596,14 @@ class _BookSourceManagementPageState extends State<BookSourceManagementPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        if (_health[source.id] case final result?)
+          Text(
+            result.label,
+            style: TextStyle(
+              fontSize: 12,
+              color: result.succeeded ? scheme.primary : scheme.error,
+            ),
+          ),
         Text(
           source.name,
           maxLines: 2,
@@ -895,7 +967,7 @@ class _BookSourceManagementPageState extends State<BookSourceManagementPage> {
     ) async {
       final result = await FilePicker.pickFiles(
         type: FileType.custom,
-        allowedExtensions: const ['json'],
+        allowedExtensions: const ['json', 'xbs'],
         allowMultiple: false,
         withData: true,
       );
@@ -954,6 +1026,9 @@ class _BookSourceManagementPageState extends State<BookSourceManagementPage> {
         var importedAdditionalCount = 0;
         if (detected.kind == BookSourceImportKind.orsp) {
           sources = await _registry.upsert(detected.sources.single);
+        } else if (detected.kind == BookSourceImportKind.xbs) {
+          importedAdditionalCount = detected.sources.length;
+          sources = await _registry.upsertAll(detected.sources);
         } else {
           final preview = detected.additionalPreview!;
           final verified = await _additionalSourceVerifier.verify(
@@ -1384,6 +1459,12 @@ class _DetectedSourceSummary extends StatelessWidget {
           const SizedBox(height: 5),
           if (analysis.kind == BookSourceImportKind.orsp)
             Text(analysis.sources.single.name)
+          else if (analysis.kind == BookSourceImportKind.xbs)
+            Text(
+              '香色 XBS：${analysis.sources.length} 条小说源\n'
+              '其他类型 ${analysis.excludedMedia} 条，格式错误 ${analysis.errors.length} 条\n'
+              '完整导入小说规则，联网检测不会删除书源。',
+            )
           else if (preview != null)
             Text(
               context.l10n.additionalSourcesPreview(

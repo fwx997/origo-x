@@ -5,12 +5,16 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:xxread/book_sources/models/registered_book_source.dart';
+import 'package:xxread/book_sources/models/book_search_filter.dart';
 import 'package:xxread/book_sources/services/book_source_client.dart';
+import 'package:xxread/book_sources/services/book_download_cancellation.dart';
+import 'package:xxread/book_sources/services/source_task_pool.dart';
 import 'package:xxread/book_sources/services/book_source_shelf_service.dart';
 import 'package:xxread/utils/localization_extension.dart';
 import 'package:xxread/utils/page_style_helper.dart';
 
 import 'widgets/sourced_book_widgets.dart';
+import 'widgets/source_filter_widgets.dart';
 
 /// 跨已启用书源的聚合搜索页。
 ///
@@ -19,12 +23,14 @@ class SourceSearchPage extends StatefulWidget {
   final List<RegisteredBookSource> sources;
   final BookSourceClient client;
   final BookSourceShelfService shelfService;
+  final SourcedBook? initialBook;
 
   const SourceSearchPage({
     super.key,
     required this.sources,
     required this.client,
     required this.shelfService,
+    this.initialBook,
   });
 
   /// 解析实际参与搜索的书源集合；发现页与测试也复用这份规则。
@@ -51,10 +57,14 @@ class _SourceSearchPageState extends State<SourceSearchPage> {
     context: context,
     client: widget.client,
     shelfService: widget.shelfService,
+    onFindSources: _findSources,
   );
 
   String? _selectedSourceId;
   List<SourcedBook> _results = const [];
+  BookSearchField _field = BookSearchField.any;
+  BookSearchMatch _match = BookSearchMatch.all;
+  SourcedBook? _reference;
   Map<String, _SearchPageState> _pageStates = const {};
   bool _searching = false;
   bool _hasSearched = false;
@@ -63,21 +73,33 @@ class _SourceSearchPageState extends State<SourceSearchPage> {
   int _failedSourceCount = 0;
   String _activeQuery = '';
   int _searchGeneration = 0;
+  BookDownloadCancellation _cancellation = BookDownloadCancellation();
+  SourceTaskPool _searchPool = SourceTaskPool(perHost: 12);
+  int _completedSources = 0;
+  int _totalSources = 0;
 
   bool get _hasMore => _pageStates.values.any((state) => state.hasMore);
 
   @override
   void initState() {
     super.initState();
+    _reference = widget.initialBook;
+    _queryController.text = _reference?.book.title ?? '';
     _scrollController.addListener(_handleScroll);
     // 进入搜索页直接聚焦输入框，用户可立即输入。
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _queryFocus.requestFocus();
+      if (!mounted) return;
+      if (_reference != null) {
+        unawaited(_search());
+      } else {
+        _queryFocus.requestFocus();
+      }
     });
   }
 
   @override
   void dispose() {
+    _cancellation.cancel();
     _scrollController
       ..removeListener(_handleScroll)
       ..dispose();
@@ -101,17 +123,34 @@ class _SourceSearchPageState extends State<SourceSearchPage> {
   Future<void> _search() async {
     final query = _queryController.text.trim();
     final targetSources = _targets;
-    if (query.isEmpty || targetSources.isEmpty) {
+    if (query.isEmpty) {
+      _clearSearch();
+      return;
+    }
+    if (targetSources.isEmpty) {
+      _cancellation.cancel();
+      _searchGeneration++;
       if (_searching && mounted) setState(() => _searching = false);
       return;
     }
     final generation = ++_searchGeneration;
+    _cancellation.cancel();
+    final cancellation = _cancellation = BookDownloadCancellation();
+    // Network requests still share the application-wide per-host budget.
+    // A cancelled query must not keep the next query behind its parsing work.
+    final pool = _searchPool = SourceTaskPool(perHost: 12);
 
     FocusScope.of(context).unfocus();
     setState(() {
+      if (BookSearchFilter.normalize(query) !=
+          BookSearchFilter.normalize(_reference?.book.title ?? '')) {
+        _reference = null;
+      }
       _searching = true;
       _hasSearched = true;
       _failedSourceCount = 0;
+      _completedSources = 0;
+      _totalSources = targetSources.length;
       _activeQuery = query;
       _results = const [];
       _pageStates = const {};
@@ -119,39 +158,22 @@ class _SourceSearchPageState extends State<SourceSearchPage> {
       _loadMoreFailed = false;
     });
 
-    final batches = await Future.wait(
-      targetSources.map((source) async {
-        try {
-          final page = await widget.client.search(source, query);
-          return _SearchBatch(
-            source: source,
-            items: page.items
-                .map((book) => SourcedBook(source: source, book: book))
-                .toList(growable: false),
-            page: page.page,
-            hasMore: page.hasMore && page.items.isNotEmpty,
-          );
-        } catch (_) {
-          return _SearchBatch(source: source, items: const [], failed: true);
-        }
-      }),
+    await Future.wait(
+      targetSources.map(
+        (source) => _scheduleSearch(
+          pool,
+          cancellation,
+          source,
+          query,
+          1,
+          generation,
+          initial: true,
+        ),
+      ),
     );
 
     if (!mounted || generation != _searchGeneration) return;
-    setState(() {
-      _results = batches.expand((batch) => batch.items).toList(growable: false);
-      _pageStates = {
-        for (final batch in batches)
-          if (!batch.failed)
-            batch.source.id: _SearchPageState(
-              source: batch.source,
-              page: batch.page,
-              hasMore: batch.hasMore,
-            ),
-      };
-      _failedSourceCount = batches.where((batch) => batch.failed).length;
-      _searching = false;
-    });
+    setState(() => _searching = false);
     WidgetsBinding.instance.addPostFrameCallback((_) => _handleScroll());
   }
 
@@ -166,70 +188,122 @@ class _SourceSearchPageState extends State<SourceSearchPage> {
 
     final query = _activeQuery;
     final generation = _searchGeneration;
+    if (_cancellation.isCancelled) _cancellation = BookDownloadCancellation();
+    final cancellation = _cancellation;
     setState(() {
       _loadingMore = true;
       _loadMoreFailed = false;
     });
 
-    final batches = await Future.wait(
-      targets.map((state) async {
-        try {
-          final page = await widget.client.search(
-            state.source,
-            query,
-            page: state.page + 1,
-          );
-          return _SearchBatch(
-            source: state.source,
-            items: page.items
-                .map((book) => SourcedBook(source: state.source, book: book))
-                .toList(growable: false),
-            page: page.page,
-            hasMore: page.hasMore && page.items.isNotEmpty,
-          );
-        } catch (_) {
-          return _SearchBatch(
-            source: state.source,
-            items: const [],
-            failed: true,
-          );
-        }
-      }),
+    await Future.wait(
+      targets.map(
+        (state) => _scheduleSearch(
+          _searchPool,
+          cancellation,
+          state.source,
+          query,
+          state.page + 1,
+          generation,
+          initial: false,
+        ),
+      ),
     );
 
     if (!mounted || generation != _searchGeneration || query != _activeQuery) {
       return;
     }
-    final seen = _results
-        .map((item) => '${item.source.id}\u0000${item.book.id}')
-        .toSet();
-    final appended = <SourcedBook>[];
-    final nextStates = Map<String, _SearchPageState>.from(_pageStates);
-    for (final batch in batches) {
-      if (batch.failed) continue;
-      nextStates[batch.source.id] = _SearchPageState(
-        source: batch.source,
-        page: batch.page,
-        hasMore: batch.hasMore,
-      );
-      for (final item in batch.items) {
-        final key = '${item.source.id}\u0000${item.book.id}';
-        if (seen.add(key)) appended.add(item);
-      }
-    }
+    setState(() => _loadingMore = false);
+  }
 
+  Future<void> _scheduleSearch(
+    SourceTaskPool pool,
+    BookDownloadCancellation cancellation,
+    RegisteredBookSource source,
+    String query,
+    int page,
+    int generation, {
+    required bool initial,
+  }) => pool
+      .run(source.apiBaseUrl.host, () async {
+        final batch = await _fetchBatch(source, query, page, cancellation);
+        _acceptBatch(batch, generation, initial: initial);
+      }, cancellation: cancellation)
+      .onError((_, _) {});
+
+  Future<_SearchBatch> _fetchBatch(
+    RegisteredBookSource source,
+    String query,
+    int pageNumber,
+    BookDownloadCancellation cancellation,
+  ) async {
+    try {
+      final page = await SourceTaskContext.run(
+        cancellation,
+        () => widget.client.search(source, query, page: pageNumber),
+      );
+      return _SearchBatch(
+        source: source,
+        items: page.items
+            .map((book) => SourcedBook(source: source, book: book))
+            .toList(),
+        page: pageNumber,
+        hasMore: page.hasMore && page.items.isNotEmpty,
+      );
+    } catch (_) {
+      return _SearchBatch(source: source, items: const [], failed: true);
+    }
+  }
+
+  void _acceptBatch(
+    _SearchBatch batch,
+    int generation, {
+    required bool initial,
+  }) {
+    if (!mounted ||
+        generation != _searchGeneration ||
+        _cancellation.isCancelled) {
+      return;
+    }
     setState(() {
-      _results = [..._results, ...appended];
-      _pageStates = nextStates;
+      if (initial) _completedSources++;
+      if (batch.failed) {
+        if (initial) _failedSourceCount++;
+        if (!initial) _loadMoreFailed = true;
+        return;
+      }
+      final seen = _results
+          .map((item) => '${item.source.id}\n${item.book.id}')
+          .toSet();
+      final added = batch.items
+          .where((item) => seen.add('${item.source.id}\n${item.book.id}'))
+          .toList(growable: false);
+      _results = [..._results, ...added];
+      _pageStates = {
+        ..._pageStates,
+        batch.source.id: _SearchPageState(
+          source: batch.source,
+          page: batch.page,
+          hasMore: batch.hasMore && added.isNotEmpty,
+        ),
+      };
+    });
+  }
+
+  void _stopSearch() {
+    _cancellation.cancel();
+    _searchGeneration++;
+    setState(() {
+      _searching = false;
       _loadingMore = false;
-      _loadMoreFailed = batches.any((batch) => batch.failed);
     });
   }
 
   void _clearSearch() {
+    _cancellation.cancel();
     _searchGeneration++;
     _queryController.clear();
     setState(() {
+      _reference = null;
       _results = const [];
       _pageStates = const {};
       _hasSearched = false;
@@ -259,6 +333,20 @@ class _SourceSearchPageState extends State<SourceSearchPage> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               if (enabledSources.isNotEmpty) _buildScopeChips(enabledSources),
+              _buildSearchOptions(),
+              if (_searching || _loadingMore)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                  child: SourceLoadingStatus(
+                    label: _searching
+                        ? '已搜索 $_completedSources / $_totalSources 个书源'
+                        : '正在加载更多结果',
+                    value: _searching && _totalSources > 0
+                        ? _completedSources / _totalSources
+                        : null,
+                    onStop: _stopSearch,
+                  ),
+                ),
               Expanded(child: _buildBody(enabledSources)),
             ],
           ),
@@ -268,7 +356,7 @@ class _SourceSearchPageState extends State<SourceSearchPage> {
   }
 
   Widget _buildQueryField(List<RegisteredBookSource> enabledSources) {
-    final canSearch = enabledSources.isNotEmpty && !_searching;
+    final canSearch = enabledSources.isNotEmpty;
     return Padding(
       padding: const EdgeInsets.only(right: 12),
       child: TextField(
@@ -278,9 +366,20 @@ class _SourceSearchPageState extends State<SourceSearchPage> {
         enabled: canSearch,
         textInputAction: TextInputAction.search,
         onSubmitted: (_) => _search(),
+        style: Theme.of(context).textTheme.bodyLarge,
         decoration: InputDecoration(
           hintText: context.l10n.bookSourcesSearchHint,
-          border: InputBorder.none,
+          prefixIcon: const Icon(Icons.search_rounded, size: 20),
+          filled: true,
+          fillColor: Theme.of(context).colorScheme.surfaceContainerHighest,
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 12,
+            vertical: 10,
+          ),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: BorderSide.none,
+          ),
           suffixIcon: _queryController.text.isEmpty
               ? null
               : IconButton(
@@ -300,7 +399,12 @@ class _SourceSearchPageState extends State<SourceSearchPage> {
   Widget _buildScopeChips(List<RegisteredBookSource> enabledSources) {
     return SizedBox(
       key: const Key('bookSourceScopeControl'),
-      height: 48,
+      height:
+          48 +
+          (MediaQuery.textScalerOf(context).scale(14) - 14).clamp(
+            0,
+            double.infinity,
+          ),
       child: ListView(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
@@ -343,6 +447,7 @@ class _SourceSearchPageState extends State<SourceSearchPage> {
 
   Widget _buildBody(List<RegisteredBookSource> enabledSources) {
     final scheme = Theme.of(context).colorScheme;
+    final groups = _groupResults();
     if (enabledSources.isEmpty) {
       return _buildMessage(
         icon: Icons.travel_explore_outlined,
@@ -350,7 +455,7 @@ class _SourceSearchPageState extends State<SourceSearchPage> {
         message: context.l10n.bookSourcesNoSourcesDescription,
       );
     }
-    if (_searching) {
+    if (_searching && _results.isEmpty) {
       return const Center(child: CircularProgressIndicator());
     }
     if (!_hasSearched) {
@@ -360,7 +465,7 @@ class _SourceSearchPageState extends State<SourceSearchPage> {
         message: context.l10n.bookSourcesSearchHint,
       );
     }
-    if (_results.isEmpty) {
+    if (groups.isEmpty && !_hasMore && !_loadingMore) {
       return _buildMessage(
         icon: Icons.search_off_rounded,
         title: context.l10n.bookSourcesNoResults,
@@ -380,7 +485,7 @@ class _SourceSearchPageState extends State<SourceSearchPage> {
                 Expanded(
                   child: Text(
                     '${context.l10n.bookSourcesSearch}'
-                    ' · ${_scopeLabel()} · ${_results.length}',
+                    ' · ${_scopeLabel()} · ${groups.length} 本书',
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
                       fontWeight: FontWeight.w700,
                     ),
@@ -403,22 +508,26 @@ class _SourceSearchPageState extends State<SourceSearchPage> {
         SliverPadding(
           padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
           sliver: SliverList.separated(
-            itemCount: _results.length,
+            itemCount: groups.length,
             separatorBuilder: (_, _) => const SizedBox(height: 10),
             itemBuilder: (context, index) {
-              final result = _results[index];
+              final group = groups[index];
               return Center(
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 1048),
-                  child: SourcedBookListTile(
-                    result: result,
-                    onTap: () => _actions.showBookDetails(result),
-                  ),
+                  child: _buildBookGroup(group),
                 ),
               );
             },
           ),
         ),
+        if (groups.isEmpty)
+          const SliverToBoxAdapter(
+            child: Padding(
+              padding: EdgeInsets.all(16),
+              child: Text('当前结果没有匹配的书籍，可调整过滤方式或继续加载。'),
+            ),
+          ),
         if (_hasMore || _loadingMore || _loadMoreFailed)
           SliverPadding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
@@ -456,6 +565,231 @@ class _SourceSearchPageState extends State<SourceSearchPage> {
       if (source.id == _selectedSourceId) return source.name;
     }
     return context.l10n.statsRangeAll;
+  }
+
+  void _findSources(SourcedBook book) {
+    if (!mounted) return;
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => SourceSearchPage(
+          sources: widget.sources,
+          client: widget.client,
+          shelfService: widget.shelfService,
+          initialBook: book,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSearchOptions() {
+    final content = _reference != null
+        ? _buildReferenceBanner(_reference!)
+        : SourceFilterGrid(
+            children: [
+              SourceFilterControl<BookSearchField>(
+                controlKey: const Key('bookSearchField'),
+                label: '匹配字段',
+                value: _field,
+                items: const [
+                  DropdownMenuItem(
+                    value: BookSearchField.any,
+                    child: Text('书名或作者'),
+                  ),
+                  DropdownMenuItem(
+                    value: BookSearchField.title,
+                    child: Text('书名'),
+                  ),
+                  DropdownMenuItem(
+                    value: BookSearchField.author,
+                    child: Text('作者'),
+                  ),
+                ],
+                onChanged: (value) => setState(() {
+                  _field = value!;
+                  if (_match == BookSearchMatch.all) {
+                    _match = BookSearchMatch.contains;
+                  }
+                }),
+              ),
+              SourceFilterControl<BookSearchMatch>(
+                controlKey: const Key('bookSearchMatch'),
+                label: '匹配方式',
+                value: _match,
+                items: const [
+                  DropdownMenuItem(
+                    value: BookSearchMatch.all,
+                    child: Text('不过滤'),
+                  ),
+                  DropdownMenuItem(
+                    value: BookSearchMatch.exact,
+                    child: Text('精确匹配'),
+                  ),
+                  DropdownMenuItem(
+                    value: BookSearchMatch.contains,
+                    child: Text('模糊匹配'),
+                  ),
+                ],
+                onChanged: (value) => setState(() => _match = value!),
+              ),
+            ],
+          );
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 1080),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 10),
+          child: content,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildReferenceBanner(SourcedBook reference) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 12, 8, 12),
+      decoration: bookSourcePanelDecoration(
+        context,
+        radius: 16,
+        stronger: true,
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.manage_search_rounded, color: theme.colorScheme.primary),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '查找其他书源',
+                  style: theme.textTheme.labelLarge?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  [
+                    reference.book.title,
+                    reference.book.author,
+                  ].where((s) => s.isNotEmpty).join(' · '),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          TextButton(
+            onPressed: () => setState(() => _reference = null),
+            child: const Text('普通搜索'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  List<List<SourcedBook>> _groupResults() {
+    final filter = BookSearchFilter(
+      query: _activeQuery,
+      field: _field,
+      match: _match,
+      reference: _reference?.book,
+    );
+    final groups = <String, List<SourcedBook>>{};
+    for (final result in _results) {
+      if (!filter.accepts(result.book)) continue;
+      if (result.source.id == _reference?.source.id &&
+          result.book.id == _reference?.book.id) {
+        continue;
+      }
+      final key = BookSearchFilter.workKey(result.book, result.source.id);
+      (groups[key] ??= []).add(result);
+    }
+    return groups.values.toList(growable: false);
+  }
+
+  Widget _buildBookGroup(List<SourcedBook> group) {
+    final result = group.first;
+    return SourcedBookListTile(
+      result: result,
+      onTap: () => _actions.showBookDetails(result),
+      footer: group.length > 1
+          ? Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  minimumSize: const Size(44, 44),
+                  visualDensity: VisualDensity.compact,
+                ),
+                onPressed: () => _chooseBookSource(group),
+                icon: const Icon(Icons.library_books_outlined, size: 16),
+                label: Text(
+                  '${group.map((b) => b.source.id).toSet().length} 个来源',
+                ),
+              ),
+            )
+          : _reference != null &&
+                BookSearchFilter.normalizeAuthor(result.book.author).isEmpty
+          ? Text('作者未标注，请核对简介和目录', style: Theme.of(context).textTheme.bodySmall)
+          : null,
+    );
+  }
+
+  void _chooseBookSource(List<SourcedBook> group) {
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      useSafeArea: true,
+      constraints: const BoxConstraints(maxWidth: 640),
+      builder: (context) => SizedBox(
+        height: MediaQuery.sizeOf(context).height * 0.72,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 4, 20, 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    group.first.book.title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '选择书源 · ${group.length} 条结果',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: ListView.separated(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
+                itemCount: group.length,
+                separatorBuilder: (_, _) => const SizedBox(height: 10),
+                itemBuilder: (context, index) => SourcedBookListTile(
+                  result: group[index],
+                  onTap: () {
+                    Navigator.of(context).pop();
+                    _actions.showBookDetails(group[index]);
+                  },
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Widget _buildMessage({

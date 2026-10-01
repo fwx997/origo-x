@@ -1,0 +1,187 @@
+import 'dart:convert';
+import 'dart:typed_data';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:xxread/book_sources/legado/legado_request.dart';
+import 'package:xxread/book_sources/models/registered_book_source.dart';
+import 'package:xxread/book_sources/services/book_source_import_analyzer.dart';
+import 'package:xxread/book_sources/services/book_source_registry.dart';
+import 'package:xxread/book_sources/xbs/xbs_javascript.dart';
+import 'package:xxread/book_sources/xbs/xbs_rule_engine.dart';
+import 'package:xxread/book_sources/xbs/xbs_runtime.dart';
+import 'package:xxread/book_sources/xbs/xbs_source.dart';
+
+Map<String, dynamic> fixture() => {
+  'sourceName': 'Fixture',
+  'sourceUrl': 'https://books.test/',
+  'enable': 1,
+  'unknownField': {'retained': true},
+  'searchBook': {
+    'requestInfo': '/search?q=%@keyWord&page=%@pageIndex',
+    'list': '//li',
+    'bookName': '//a',
+    'detailUrl': '//a/@href',
+    'author': '//span',
+  },
+  'bookDetail': {
+    'bookName': '//h1',
+    'desc': '//p',
+    'chapterListUrl': '//a/@href',
+  },
+  'chapterList': {
+    'list': '//li',
+    'title': '//a',
+    'url': '//a/@href',
+    'nextPageUrl': '//a[@rel="next"]/@href',
+  },
+  'chapterContent': {'content': '//article/p'},
+  'bookWorld': {
+    '榜单': {
+      'requestInfo': '/rank?kind=%@filter',
+      'list': '//li',
+      'bookName': '//a',
+      'detailUrl': '//a/@href',
+      'moreKeys': {
+        'requestFilters': {'最新': 'new', '热门': 'hot'},
+      },
+    },
+  },
+};
+
+void main() {
+  setUp(() => SharedPreferences.setMockInitialValues({}));
+
+  test(
+    'all 185 original rules survive import, reload, and repeat import',
+    () async {
+      final raw = {for (var i = 0; i < 185; i++) 'alias$i': fixture()};
+      raw['media'] = {...fixture(), 'sourceType': 'comic'};
+      final analysis = BookSourceImportAnalyzer().analyzeBytes(
+        Uint8List.fromList(utf8.encode(jsonEncode(raw))),
+      );
+      expect(analysis.kind, BookSourceImportKind.xbs);
+      expect(analysis.sources, hasLength(185));
+      expect(analysis.excludedMedia, 1);
+      final registry = BookSourceRegistry();
+      await registry.upsertAll(analysis.sources);
+      final source = analysis.sources.first;
+      await registry.setEnabled(source.id, false);
+      await registry.upsertAll(analysis.sources);
+      final saved = await registry.load();
+      expect(saved, hasLength(185));
+      expect(saved.firstWhere((s) => s.id == source.id).enabled, isFalse);
+      expect(await registry.loadRunnable(), hasLength(185));
+      final restored = RegisteredBookSource.fromJson(source.toJson());
+      expect(XbsSource.fromRegistered(restored).config, fixture());
+    },
+  );
+
+  test(
+    'HTML source connects search, detail, paged catalog, content and discovery',
+    () async {
+      final transport = _FixtureTransport();
+      final runtime = XbsRuntime(
+        transport: transport,
+        javascript: _NoJavascript.new,
+      );
+      final source = XbsSource('fixture', fixture()).toRegisteredSource();
+      final search = await runtime.search(source, '剑 来');
+      expect(transport.requests.first.url.queryParameters['q'], '剑 来');
+      expect(search.items.single.title, 'Example Book');
+      expect(search.items.single.author, 'Author');
+      expect(search.hasMore, isTrue);
+      final book = await runtime.getBook(source, search.items.single.id);
+      expect(book.id, 'https://books.test/book/1');
+      expect(book.author, 'Author');
+      final chapters = await runtime.getChapters(source, book.id);
+      expect(chapters.map((c) => c.title), ['Chapter One', 'Chapter Two']);
+      final content = await runtime.getChapterContent(
+        source,
+        bookId: book.id,
+        chapterId: chapters.first.id,
+      );
+      expect(content.content, contains('<p>First paragraph</p>'));
+      expect(content.content, contains('<p>Second paragraph</p>'));
+      final categories = await runtime.getCategories(source);
+      expect(categories.map((c) => c.name), ['榜单 · 最新', '榜单 · 热门']);
+      final browse = await runtime.browse(source, category: categories.last.id);
+      expect(transport.requests.last.url.queryParameters['kind'], 'hot');
+      expect(browse.items.single.title, 'Example Book');
+    },
+  );
+
+  test('JSON paths retain arrays, numbers, and indexed values', () async {
+    final engine = XbsRuleEngine(_NoJavascript(), {}, {});
+    final data = {
+      'data': {
+        'items': [
+          {'id': 17},
+          {'id': 19},
+        ],
+      },
+    };
+    expect(
+      await engine.evaluate(data, 'data/items', nodes: true),
+      hasLength(2),
+    );
+    expect(await engine.text(data, 'data/items[1]/id'), '19');
+    expect(await engine.evaluate(data, 'data/items/*/id'), [17, 19]);
+  });
+
+  test(
+    'uses the original Apple charset identifiers without double encoding',
+    () async {
+      final config = fixture();
+      final rules = Map<String, dynamic>.from(config['searchBook'] as Map);
+      config['searchBook'] = rules;
+      rules['requestParamsEncode'] = 2147485234;
+      rules['responseEncode'] = 2147485232;
+      final transport = _FixtureTransport();
+      final runtime = XbsRuntime(
+        transport: transport,
+        javascript: _NoJavascript.new,
+      );
+      await runtime.search(
+        XbsSource('encoded', config).toRegisteredSource(),
+        '中文',
+      );
+      expect(transport.requests.single.url.query, contains('q=%D6%D0%CE%C4'));
+      expect(transport.requests.single.charset, 'gb18030');
+      expect(transport.requests.single.responseCharset, 'gbk');
+    },
+  );
+}
+
+class _NoJavascript implements XbsJavascript {
+  @override
+  Future<Object?> evaluate(
+    String code,
+    Map<String, dynamic> config,
+    Map<String, dynamic> params,
+    Object? result,
+  ) async => throw StateError('This fixture must run without JavaScript');
+  @override
+  Future<void> close() async {}
+}
+
+class _FixtureTransport implements LegadoTransport {
+  final requests = <LegadoRequestTemplate>[];
+  @override
+  Future<LegadoResponse> send(LegadoRequestTemplate request) async {
+    requests.add(request);
+    final body = switch (request.url.path) {
+      '/search' || '/rank' =>
+        '<ul><li><a href="/book/1">Example Book</a><span>Author</span></li></ul>',
+      '/book/1' =>
+        '<h1>Example Book</h1><p>Description</p><a href="/catalog/1">Catalog</a>',
+      '/catalog/1' =>
+        '<ul><li><a href="/chapter/1">Chapter One</a></li></ul><a rel="next" href="/catalog/2">Next</a>',
+      '/catalog/2' =>
+        '<ul><li><a href="/chapter/1">Chapter One</a></li><li><a href="/chapter/2">Chapter Two</a></li></ul>',
+      '/chapter/1' =>
+        '<article><p>First paragraph</p><p>Second paragraph</p></article>',
+      _ => throw StateError('Unexpected request: ${request.url.path}'),
+    };
+    return LegadoResponse(body: body, finalUri: request.url);
+  }
+}

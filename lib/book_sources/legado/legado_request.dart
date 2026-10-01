@@ -9,6 +9,7 @@ import 'package:gbk_codec/gbk_codec.dart';
 import '../../utils/fast_gbk_decoder.dart';
 import '../protocol/book_source_protocol.dart';
 import '../services/book_source_network_policy.dart';
+import '../services/source_task_pool.dart';
 
 enum LegadoRequestMethod { get, post }
 
@@ -18,6 +19,7 @@ class LegadoRequestTemplate {
     required this.method,
     required this.headers,
     required this.charset,
+    this.responseCharset,
     this.body,
   });
 
@@ -25,6 +27,7 @@ class LegadoRequestTemplate {
   final LegadoRequestMethod method;
   final Map<String, String> headers;
   final String charset;
+  final String? responseCharset;
   final String? body;
 
   static LegadoRequestTemplate parse(
@@ -255,11 +258,22 @@ class LegadoHttpTransport implements LegadoTransport {
   void close({bool force = true}) => _dio.close(force: force);
 
   @override
-  Future<LegadoResponse> send(LegadoRequestTemplate request) async {
+  Future<LegadoResponse> send(LegadoRequestTemplate request) =>
+      SourceTaskPool.network.run(
+        request.url.host,
+        () => _send(request),
+        cancellation: SourceTaskContext.cancellation,
+      );
+
+  Future<LegadoResponse> _send(LegadoRequestTemplate request) async {
+    final cancellation = SourceTaskContext.cancellation;
     var current = request.url;
     for (var redirects = 0; redirects <= 5; redirects++) {
+      cancellation?.throwIfCancelled();
       await _networkPolicy.validate(current);
       final cancelToken = CancelToken();
+      void cancelRequest() => cancelToken.cancel('Source task cancelled');
+      cancellation?.addListener(cancelRequest);
       try {
         final response = await _dio.requestUri<List<int>>(
           current,
@@ -290,7 +304,11 @@ class LegadoHttpTransport implements LegadoTransport {
             );
           }
           return LegadoResponse(
-            body: _decode(bytes, request.charset, response.headers),
+            body: _decode(
+              bytes,
+              request.responseCharset ?? request.charset,
+              response.headers,
+            ),
             finalUri: current,
           );
         }
@@ -304,6 +322,7 @@ class LegadoHttpTransport implements LegadoTransport {
           response.headers.value(HttpHeaders.locationHeader),
         );
       } on DioException catch (error) {
+        cancellation?.throwIfCancelled();
         if (CancelToken.isCancel(error)) {
           throw BookSourceProtocolException(
             error.message ?? 'Legado request was cancelled.',
@@ -314,6 +333,8 @@ class LegadoHttpTransport implements LegadoTransport {
               ? 'Could not connect to the Legado source.'
               : 'Legado source returned HTTP ${error.response!.statusCode}.',
         );
+      } finally {
+        cancellation?.removeListener(cancelRequest);
       }
     }
     throw const BookSourceProtocolException('Legado source request failed.');

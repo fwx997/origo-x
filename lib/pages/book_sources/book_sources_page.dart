@@ -2,6 +2,9 @@
 // 技术要点：Flutter UI、按 Tab 缓存的书源请求、下拉刷新。
 
 import 'dart:async';
+import 'package:xxread/book_sources/services/source_task_pool.dart';
+import 'package:xxread/book_sources/services/book_download_cancellation.dart';
+import 'package:xxread/book_sources/xbs/xbs_discovery.dart';
 
 import 'package:flutter/material.dart';
 import 'package:xxread/book_sources/models/registered_book_source.dart';
@@ -17,6 +20,7 @@ import 'package:xxread/utils/page_style_helper.dart';
 import 'book_source_management_page.dart';
 import 'source_search_page.dart';
 import 'widgets/sourced_book_widgets.dart';
+import 'widgets/source_filter_widgets.dart';
 
 /// 发现页：只负责展示书籍内容。
 ///
@@ -89,6 +93,7 @@ class _BookSourcesPageState extends State<BookSourcesPage> {
     context: context,
     client: _client,
     shelfService: _shelfService,
+    onFindSources: _findSources,
   );
   StreamSubscription<void>? _registrySubscription;
 
@@ -99,9 +104,16 @@ class _BookSourcesPageState extends State<BookSourcesPage> {
 
   // 每个 Tab 的内容独立缓存，切换回来不再重新请求。
   final Map<_DiscoverSection, _SectionCache> _cache = {};
+  final Map<_DiscoverSection, BookDownloadCancellation> _sectionRequests = {};
+  BookDownloadCancellation _categoryRequest = BookDownloadCancellation();
+  int _sourceGeneration = 0;
   _SourcedCategory? _selectedCategory;
   List<SourcedBook> _categoryBooks = const [];
   bool _loadingCategoryBooks = false;
+  Map<String, String> _categoryFilters = {};
+  int _categoryPage = 0;
+  bool _categoryHasMore = false;
+  String? _categoryError;
 
   @override
   void initState() {
@@ -113,13 +125,15 @@ class _BookSourcesPageState extends State<BookSourcesPage> {
 
   @override
   void dispose() {
+    _cancelRequests();
     _registrySubscription?.cancel();
     super.dispose();
   }
 
   Future<void> _loadSources() async {
+    final generation = ++_sourceGeneration;
     final sources = await _registry.loadRunnable();
-    if (!mounted) return;
+    if (!mounted || generation != _sourceGeneration) return;
     setState(() {
       _sources = sources;
       _loadingSources = false;
@@ -128,12 +142,23 @@ class _BookSourcesPageState extends State<BookSourcesPage> {
   }
 
   Future<void> _reloadAll() async {
+    _cancelRequests();
     _cache.clear();
     _selectedSourceId = null;
     _selectedCategory = null;
     _categoryBooks = const [];
     _loadingCategoryBooks = false;
+    _categoryFilters = {};
+    _categoryError = null;
+    _categoryHasMore = false;
     await _loadSources();
+  }
+
+  void _cancelRequests() {
+    _categoryRequest.cancel();
+    for (final request in _sectionRequests.values) {
+      request.cancel();
+    }
   }
 
   List<RegisteredBookSource> _targets(String capability) => _sources
@@ -156,106 +181,139 @@ class _BookSourcesPageState extends State<BookSourcesPage> {
   Future<void> _loadSection(
     _DiscoverSection section, {
     bool force = false,
+    bool retryFailed = false,
   }) async {
-    if (!force && _cache[section] != null) return;
-    setState(() => _cache[section] = const _SectionCache.loading());
-    _SectionCache next;
-    try {
-      next = switch (section) {
-        _DiscoverSection.recommended => _SectionCache.shelves(
-          await _fetchShelves(),
-        ),
-        _DiscoverSection.categories => _SectionCache.categories(
-          await _fetchCategories(),
-        ),
-        _DiscoverSection.latest => _SectionCache.books(await _fetchLatest()),
-      };
-    } catch (error) {
-      next = _SectionCache.error(error.toString());
+    final cached = _cache[section];
+    final interrupted =
+        cached != null &&
+        cached.pending.isNotEmpty &&
+        _sectionRequests[section]?.isCancelled == true;
+    if (!force && !retryFailed && cached != null && !interrupted) return;
+    _sectionRequests[section]?.cancel();
+    final cancellation = BookDownloadCancellation();
+    _sectionRequests[section] = cancellation;
+    final reuse = cached != null && (interrupted || retryFailed) && !force;
+    final targets = _sourcesFor(section)
+        .where(
+          (source) =>
+              !reuse ||
+              cached.pending.contains(source.id) ||
+              retryFailed && cached.failures.containsKey(source.id),
+        )
+        .toList();
+    final pending = targets.map((source) => source.id).toSet();
+    if (force && section == _DiscoverSection.categories) {
+      _categoryRequest.cancel();
+      _selectedCategory = null;
+      _categoryBooks = const [];
+      _loadingCategoryBooks = false;
+      _categoryError = null;
+      _categoryHasMore = false;
     }
-    if (!mounted) return;
-    setState(() => _cache[section] = next);
-    if (section == _DiscoverSection.categories) {
+    setState(
+      () => _cache[section] = _SectionCache(
+        pending: pending,
+        shelves: reuse ? cached.shelves : const [],
+        categories: reuse ? cached.categories : const [],
+        books: reuse ? cached.books : const [],
+        failures: reuse
+            ? {
+                for (final failure in cached.failures.entries)
+                  if (!pending.contains(failure.key))
+                    failure.key: failure.value,
+              }
+            : const {},
+      ),
+    );
+    if (section == _DiscoverSection.categories && section == _section) {
+      _autoSelectFirstCategory();
+    }
+    final pool = SourceTaskPool(limit: 12, perHost: 12);
+    await Future.wait(
+      targets.map(
+        (source) => pool
+            .run(
+              source.apiBaseUrl.host,
+              () => _fetchSectionSource(section, source, cancellation),
+              cancellation: cancellation,
+            )
+            .onError((_, _) {}),
+      ),
+    );
+  }
+
+  Future<void> _fetchSectionSource(
+    _DiscoverSection section,
+    RegisteredBookSource source,
+    BookDownloadCancellation cancellation,
+  ) async {
+    _SectionCache batch;
+    try {
+      batch = await SourceTaskContext.run(
+        cancellation,
+        () => _fetchSectionContent(section, source),
+      );
+    } catch (error) {
+      batch = _SectionCache(failures: {source.id: '${source.name}: $error'});
+    }
+    if (!mounted ||
+        cancellation.isCancelled ||
+        _sectionRequests[section] != cancellation) {
+      return;
+    }
+    final previous = _cache[section]!;
+    setState(
+      () => _cache[section] = _SectionCache(
+        shelves: [...previous.shelves, ...batch.shelves],
+        categories: [...previous.categories, ...batch.categories],
+        books: [...previous.books, ...batch.books],
+        pending: {...previous.pending}..remove(source.id),
+        failures: {...previous.failures, ...batch.failures},
+      ),
+    );
+    if (section == _DiscoverSection.categories && section == _section) {
       _autoSelectFirstCategory();
     }
   }
 
-  Future<List<_DiscoveryShelf>> _fetchShelves() async {
-    final batches = await _fetchSourceBatches(_targets('discover'), (
-      source,
-    ) async {
-      final page = await _client.getDiscovery(source);
-      return page.sections
-          .where((section) => section.items.isNotEmpty)
-          .map(
-            (section) => _DiscoveryShelf(
-              source: source,
-              title: section.title,
-              items: section.items,
-            ),
-          )
-          .toList(growable: false);
-    });
-    return batches.expand((items) => items).toList(growable: false);
-  }
-
-  Future<List<_SourcedCategory>> _fetchCategories() async {
-    final batches = await _fetchSourceBatches(_targets('categories'), (
-      source,
-    ) async {
-      final categories = await _client.getCategories(source);
-      return categories
-          .map(
-            (category) => _SourcedCategory(
-              source: source,
-              id: category.id,
-              name: category.name,
-            ),
-          )
-          .toList(growable: false);
-    });
-    return batches.expand((items) => items).toList(growable: false);
-  }
-
-  Future<List<SourcedBook>> _fetchLatest() async {
-    final batches = await _fetchSourceBatches(_targets('browse'), (
-      source,
-    ) async {
-      final page = await _client.browse(source, sort: 'latest');
-      return page.items
-          .map((book) => SourcedBook(source: source, book: book))
-          .toList(growable: false);
-    });
-    return BookSourcesPage.interleaveLatestBatches(batches);
-  }
-
-  Future<List<List<T>>> _fetchSourceBatches<T>(
-    List<RegisteredBookSource> sources,
-    Future<List<T>> Function(RegisteredBookSource source) fetch,
+  Future<_SectionCache> _fetchSectionContent(
+    _DiscoverSection section,
+    RegisteredBookSource source,
   ) async {
-    final results = await Future.wait(
-      sources.map((source) async {
-        try {
-          return _SourceFetchResult<T>.success(source, await fetch(source));
-        } catch (error) {
-          return _SourceFetchResult<T>.failure(source, error);
-        }
-      }),
-    );
-    final batches = results
-        .where((result) => result.error == null)
-        .map((result) => result.items)
-        .toList(growable: false);
-    final hasContent = batches.any((items) => items.isNotEmpty);
-    final failures = results.where((result) => result.error != null).toList();
-    if (!hasContent && failures.isNotEmpty) {
-      throw BookSourceProtocolException(
-        failures
-            .map((failure) => '${failure.source.name}: ${failure.error}')
-            .join('\n'),
-      );
+    switch (section) {
+      case _DiscoverSection.recommended:
+        final page = await _client.getDiscovery(source);
+        return _SectionCache(
+          shelves: page.sections
+              .where((section) => section.items.isNotEmpty)
+              .map(
+                (section) => _DiscoveryShelf(
+                  source: source,
+                  title: section.title,
+                  items: section.items,
+                ),
+              )
+              .toList(growable: false),
+        );
+      case _DiscoverSection.categories:
+        final categories = await _client.getCategories(source);
+        return _SectionCache(
+          categories: categories
+              .map(
+                (category) =>
+                    _SourcedCategory(source: source, category: category),
+              )
+              .toList(growable: false),
+        );
+      case _DiscoverSection.latest:
+        final page = await _client.browse(source, sort: 'latest');
+        return _SectionCache(
+          books: page.items
+              .take(BookSourcesPage.maxLatestItemsPerSource)
+              .map((book) => SourcedBook(source: source, book: book))
+              .toList(growable: false),
+        );
     }
-    return batches;
   }
 
   void _autoSelectFirstCategory() {
@@ -269,11 +327,15 @@ class _BookSourcesPageState extends State<BookSourcesPage> {
 
   void _changeSourceScope(String? sourceId) {
     if (_selectedSourceId == sourceId) return;
+    _categoryRequest.cancel();
     setState(() {
       _selectedSourceId = sourceId;
       _selectedCategory = null;
       _categoryBooks = const [];
       _loadingCategoryBooks = false;
+      _categoryFilters = {};
+      _categoryError = null;
+      _categoryHasMore = false;
     });
     if (_section == _DiscoverSection.categories) {
       _autoSelectFirstCategory();
@@ -281,6 +343,15 @@ class _BookSourcesPageState extends State<BookSourcesPage> {
   }
 
   Future<void> _changeSection(_DiscoverSection section) async {
+    if (_section != section) _sectionRequests[_section]?.cancel();
+    if (_section == _DiscoverSection.categories && _section != section) {
+      _categoryRequest.cancel();
+      _selectedCategory = null;
+      _categoryBooks = const [];
+      _categoryError = null;
+      _categoryHasMore = false;
+      _loadingCategoryBooks = false;
+    }
     final selectedSourceStillAvailable =
         _selectedSourceId == null ||
         _sourcesFor(section).any((source) => source.id == _selectedSourceId);
@@ -299,29 +370,78 @@ class _BookSourcesPageState extends State<BookSourcesPage> {
     }
   }
 
-  Future<void> _selectCategory(_SourcedCategory category) async {
+  Future<void> _selectCategory(
+    _SourcedCategory category, {
+    Map<String, String>? filters,
+  }) async {
+    _categoryRequest.cancel();
+    _categoryRequest = BookDownloadCancellation();
     setState(() {
       _selectedCategory = category;
       _categoryBooks = const [];
-      _loadingCategoryBooks = category.source.capabilities.contains('browse');
+      _categoryFilters =
+          filters ??
+          {
+            for (final group in category.category.filterGroups)
+              group.id: group.options.first.value,
+          };
+      _categoryPage = 0;
+      _categoryHasMore = category.source.capabilities.contains('browse');
+      _categoryError = null;
+      _loadingCategoryBooks = false;
     });
-    if (!category.source.capabilities.contains('browse')) return;
+    if (_categoryHasMore) await _loadCategoryPage();
+  }
+
+  Future<void> _loadCategoryPage() async {
+    final category = _selectedCategory;
+    if (category == null || _loadingCategoryBooks || !_categoryHasMore) return;
+    final cancellation = _categoryRequest;
+    final pageNumber = _categoryPage + 1;
+    final categoryId =
+        category.source.sourceProtocol == BookSourceProtocolKind.xbs
+        ? XbsDiscovery.withFilters(category.id, _categoryFilters)
+        : category.id;
+    setState(() {
+      _loadingCategoryBooks = true;
+      _categoryError = null;
+    });
     try {
-      final page = await _client.browse(
-        category.source,
-        category: category.id,
-        sort: 'popular',
+      final page = await SourceTaskContext.run(
+        cancellation,
+        () => _client.browse(
+          category.source,
+          category: categoryId,
+          sort: 'popular',
+          page: pageNumber,
+        ),
       );
-      if (!mounted || _selectedCategory != category) return;
+      if (!mounted ||
+          cancellation.isCancelled ||
+          _categoryRequest != cancellation) {
+        return;
+      }
+      final seen = _categoryBooks.map((item) => item.book.id).toSet();
+      final added = page.items
+          .where((book) => seen.add(book.id))
+          .map((book) => SourcedBook(source: category.source, book: book))
+          .toList(growable: false);
       setState(() {
-        _categoryBooks = page.items
-            .map((book) => SourcedBook(source: category.source, book: book))
-            .toList(growable: false);
+        _categoryBooks = [..._categoryBooks, ...added];
+        _categoryPage = pageNumber;
+        _categoryHasMore = page.hasMore && added.isNotEmpty;
         _loadingCategoryBooks = false;
       });
-    } catch (_) {
-      if (!mounted || _selectedCategory != category) return;
-      setState(() => _loadingCategoryBooks = false);
+    } catch (error) {
+      if (!mounted ||
+          cancellation.isCancelled ||
+          _categoryRequest != cancellation) {
+        return;
+      }
+      setState(() {
+        _categoryError = error.toString();
+        _loadingCategoryBooks = false;
+      });
     }
   }
 
@@ -370,12 +490,18 @@ class _BookSourcesPageState extends State<BookSourcesPage> {
   }
 
   void _openSearch() {
+    _findSources(null);
+  }
+
+  void _findSources(SourcedBook? book) {
+    if (!mounted) return;
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => SourceSearchPage(
           sources: _sources,
           client: _client,
           shelfService: _shelfService,
+          initialBook: book,
         ),
       ),
     );
@@ -514,7 +640,12 @@ class _BookSourcesPageState extends State<BookSourcesPage> {
   Widget _buildSourceScope(List<RegisteredBookSource> sources) {
     return SizedBox(
       key: const Key('bookSourceDiscoverScopeControl'),
-      height: 42,
+      height:
+          48 +
+          (MediaQuery.textScalerOf(context).scale(14) - 14).clamp(
+            0,
+            double.infinity,
+          ),
       child: ListView(
         scrollDirection: Axis.horizontal,
         children: [
@@ -552,32 +683,45 @@ class _BookSourcesPageState extends State<BookSourcesPage> {
       ];
     }
     final cache = _cache[_section];
-    if (cache == null || cache.loading) {
-      return [
+    if (cache == null) return const [];
+    final pending = cache.pending
+        .where((id) => _selectedSourceId == null || id == _selectedSourceId)
+        .length;
+    final failures = cache.failures.entries
+        .where(
+          (entry) =>
+              _selectedSourceId == null || entry.key == _selectedSourceId,
+        )
+        .toList();
+    final hasContent = cache.hasContent(_selectedSourceId);
+    final slivers = <Widget>[];
+    if (pending > 0) {
+      slivers.add(
         _paddedSectionSliver(
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 44),
-            child: Center(child: CircularProgressIndicator()),
-          ),
-          bottomPadding: bottomPadding,
+          SourceLoadingStatus(label: '还有 $pending 个书源正在加载'),
+          bottomPadding: 12,
         ),
-      ];
+      );
     }
-    if (cache.error != null) {
-      return [
+    if (failures.isNotEmpty) {
+      slivers.add(
         _paddedSectionSliver(
           _buildMessageCard(
             icon: Icons.cloud_off_outlined,
             title: context.l10n.discoverLoadFailed,
-            message: cache.error!,
+            message: [
+              if (failures.length > 3) '${failures.length} 个书源加载失败，显示前 3 个：',
+              ...failures.take(3).map((entry) => entry.value),
+            ].join('\n'),
             actionLabel: context.l10n.discoverRetry,
-            onAction: () => _loadSection(_section, force: true),
+            onAction: () => _loadSection(_section, retryFailed: true),
           ),
-          bottomPadding: bottomPadding,
+          bottomPadding: 12,
         ),
-      ];
+      );
     }
-    return switch (_section) {
+    if (!hasContent && (pending > 0 || failures.isNotEmpty)) return slivers;
+    slivers.addAll(switch (_section) {
       _DiscoverSection.recommended => _buildShelvesSlivers(
         cache,
         bottomPadding,
@@ -587,11 +731,12 @@ class _BookSourcesPageState extends State<BookSourcesPage> {
         bottomPadding,
       ),
       _DiscoverSection.latest => _buildLatestSlivers(cache, bottomPadding),
-    };
+    });
+    return slivers;
   }
 
   List<Widget> _buildShelvesSlivers(_SectionCache cache, double bottomPadding) {
-    final shelves = (cache.shelves ?? const <_DiscoveryShelf>[])
+    final shelves = cache.shelves
         .where((shelf) => _matchesSelectedSource(shelf.source))
         .toList(growable: false);
     if (shelves.isEmpty) {
@@ -663,7 +808,7 @@ class _BookSourcesPageState extends State<BookSourcesPage> {
     _SectionCache cache,
     double bottomPadding,
   ) {
-    final categories = (cache.categories ?? const <_SourcedCategory>[])
+    final categories = cache.categories
         .where((category) => _matchesSelectedSource(category.source))
         .toList(growable: false);
     if (categories.isEmpty) {
@@ -676,24 +821,41 @@ class _BookSourcesPageState extends State<BookSourcesPage> {
         ),
       ];
     }
-    final selectedCategory = _selectedCategory ?? categories.first;
+    final selected = _selectedCategory ?? categories.first;
     final slivers = <Widget>[
       _paddedSectionSliver(
         _CategoryPickerButton(
-          category: selectedCategory,
+          category: selected,
           onTap: () => _openCategoryPicker(categories),
         ),
-        bottomPadding: 18,
+        bottomPadding: 12,
       ),
+      if (selected.category.filterGroups.isNotEmpty)
+        _paddedSectionSliver(
+          _buildCategoryFilters(selected),
+          bottomPadding: 12,
+        ),
     ];
-    if (_loadingCategoryBooks) {
+    if (_categoryBooks.isNotEmpty) {
+      slivers.add(_bookListSliver(_categoryBooks, bottomPadding: 12));
+    }
+    if (_categoryError != null) {
       slivers.add(
         _paddedSectionSliver(
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 36),
-            child: Center(child: CircularProgressIndicator()),
+          _buildMessageCard(
+            icon: Icons.cloud_off_outlined,
+            title: context.l10n.discoverLoadFailed,
+            message: _categoryError!,
+            actionLabel: context.l10n.discoverRetry,
+            onAction: _loadCategoryPage,
           ),
-          topPadding: 0,
+          bottomPadding: bottomPadding,
+        ),
+      );
+    } else if (_loadingCategoryBooks) {
+      slivers.add(
+        _paddedSectionSliver(
+          const Center(child: CircularProgressIndicator()),
           bottomPadding: bottomPadding,
         ),
       );
@@ -705,22 +867,104 @@ class _BookSourcesPageState extends State<BookSourcesPage> {
             title: context.l10n.bookSourcesNoResults,
             message: context.l10n.discoverCategoryEmpty,
           ),
-          topPadding: 0,
           bottomPadding: bottomPadding,
         ),
       );
-    } else {
+    }
+    if (_categoryHasMore && !_loadingCategoryBooks && _categoryError == null) {
       slivers.add(
-        _bookListSliver(_categoryBooks, bottomPadding: bottomPadding),
+        _paddedSectionSliver(
+          Center(
+            child: OutlinedButton.icon(
+              key: const Key('bookSourceCategoryLoadMore'),
+              onPressed: _loadCategoryPage,
+              icon: const Icon(Icons.expand_more),
+              label: Text(context.l10n.bookSourcesLoadMore),
+            ),
+          ),
+          bottomPadding: bottomPadding,
+        ),
       );
     }
     return slivers;
   }
 
+  Widget _buildCategoryFilters(_SourcedCategory category) {
+    final groups = category.category.filterGroups;
+    final fields = [
+      for (var index = 0; index < groups.length; index++)
+        _categoryFilterField(category, groups[index], index),
+    ];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SourceFilterGrid(children: fields.take(2).toList(growable: false)),
+        if (fields.length > 2)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: ExpansionTile(
+              key: PageStorageKey(
+                'moreFilters:${category.source.id}:${category.id}',
+              ),
+              tilePadding: const EdgeInsets.symmetric(horizontal: 12),
+              childrenPadding: const EdgeInsets.fromLTRB(0, 4, 0, 8),
+              shape: const Border(),
+              collapsedShape: const Border(),
+              title: Text(
+                '更多筛选（${fields.length - 2}）',
+                style: Theme.of(context).textTheme.labelLarge,
+              ),
+              children: [
+                SourceFilterGrid(
+                  children: fields.skip(2).toList(growable: false),
+                ),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _categoryFilterField(
+    _SourcedCategory category,
+    BookSourceFilterGroup group,
+    int index,
+  ) => SourceFilterControl<String>(
+    controlKey: ValueKey('categoryFilter:${group.id}'),
+    label: group.name == '筛选' ? '筛选 ${index + 1}' : group.name,
+    value: _categoryFilters[group.id] ?? group.options.first.value,
+    items: group.options
+        .map(
+          (option) => DropdownMenuItem(
+            value: option.value,
+            child: Text(
+              option.name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        )
+        .toList(growable: false),
+    onChanged: (value) {
+      if (value == null) return;
+      unawaited(
+        _selectCategory(
+          category,
+          filters: {..._categoryFilters, group.id: value},
+        ),
+      );
+    },
+  );
+
   List<Widget> _buildLatestSlivers(_SectionCache cache, double bottomPadding) {
-    final books = (cache.books ?? const <SourcedBook>[])
-        .where((result) => _matchesSelectedSource(result.source))
-        .toList(growable: false);
+    final batches = <String, List<SourcedBook>>{};
+    for (final result in cache.books) {
+      if (!_matchesSelectedSource(result.source)) continue;
+      (batches[result.source.id] ??= []).add(result);
+    }
+    final books = BookSourcesPage.interleaveLatestBatches(
+      batches.values.toList(),
+    );
     if (books.isEmpty) {
       return [
         _paddedSectionSliver(
@@ -871,54 +1115,28 @@ class _BookSourcesPageState extends State<BookSourcesPage> {
 
 enum _DiscoverSection { recommended, categories, latest }
 
-/// 一个 Tab 的缓存态：loading / error / 三种内容之一。
+/// Each source publishes its batch immediately; failures never erase successes.
 class _SectionCache {
-  final bool loading;
-  final String? error;
-  final List<_DiscoveryShelf>? shelves;
-  final List<_SourcedCategory>? categories;
-  final List<SourcedBook>? books;
+  final Set<String> pending;
+  final Map<String, String> failures;
+  final List<_DiscoveryShelf> shelves;
+  final List<_SourcedCategory> categories;
+  final List<SourcedBook> books;
 
-  const _SectionCache.loading()
-    : loading = true,
-      error = null,
-      shelves = null,
-      categories = null,
-      books = null;
+  const _SectionCache({
+    this.pending = const {},
+    this.failures = const {},
+    this.shelves = const [],
+    this.categories = const [],
+    this.books = const [],
+  });
 
-  const _SectionCache.error(String this.error)
-    : loading = false,
-      shelves = null,
-      categories = null,
-      books = null;
-
-  const _SectionCache.shelves(List<_DiscoveryShelf> this.shelves)
-    : loading = false,
-      error = null,
-      categories = null,
-      books = null;
-
-  const _SectionCache.categories(List<_SourcedCategory> this.categories)
-    : loading = false,
-      error = null,
-      shelves = null,
-      books = null;
-
-  const _SectionCache.books(List<SourcedBook> this.books)
-    : loading = false,
-      error = null,
-      shelves = null,
-      categories = null;
-}
-
-class _SourceFetchResult<T> {
-  final List<T> items;
-  final RegisteredBookSource source;
-  final Object? error;
-
-  const _SourceFetchResult.success(this.source, this.items) : error = null;
-
-  const _SourceFetchResult.failure(this.source, this.error) : items = const [];
+  bool hasContent(String? sourceId) =>
+      shelves.any((item) => sourceId == null || item.source.id == sourceId) ||
+      categories.any(
+        (item) => sourceId == null || item.source.id == sourceId,
+      ) ||
+      books.any((item) => sourceId == null || item.source.id == sourceId);
 }
 
 class _DiscoveryShelf {
@@ -935,14 +1153,11 @@ class _DiscoveryShelf {
 
 class _SourcedCategory {
   final RegisteredBookSource source;
-  final String id;
-  final String name;
+  final BookSourceCategory category;
+  String get id => category.id;
+  String get name => category.name;
 
-  const _SourcedCategory({
-    required this.source,
-    required this.id,
-    required this.name,
-  });
+  const _SourcedCategory({required this.source, required this.category});
 }
 
 class _CategoryPickerButton extends StatelessWidget {
