@@ -39,8 +39,8 @@ jobs:
           test -s "$app/Frameworks/App.framework/App"
           test -s "$app/Frameworks/Flutter.framework/Flutter"
           test -s "$app/Frameworks/fjs.framework/fjs"
-          lipo -verify_arch arm64 "$app/Runner"
-          lipo -verify_arch arm64 "$app/Frameworks/fjs.framework/fjs"
+          lipo "$app/Runner" -verify_arch arm64
+          lipo "$app/Frameworks/fjs.framework/fjs" -verify_arch arm64
           plutil -lint "$app/Info.plist"
       - name: Package unsigned IPA
         run: |
