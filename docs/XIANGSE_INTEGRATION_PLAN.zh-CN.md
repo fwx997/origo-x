@@ -1,6 +1,6 @@
 # 基于 Origo X 的香色书源集成计划
 
-日期：2026-10-01。状态：已实现 XBS 核心运行链、独立找书、按书找源、分类筛选与分页及有界并发；完整兼容与 iOS 交付仍待完成。最新范围与证据见 [行为依据与验收](XIANGSE_BEHAVIOR_REFERENCE.zh-CN.md)。下文仍保留长期规划，不代表全部条目已完成。
+更新日期：2026-10-02。状态：已实现 XBS 核心运行链、独立找书、按书找源、分类筛选与分页及有界并发；[未签名 iOS 体验版已交付](https://github.com/fwx997/origo-x/releases/tag/xbs-preview-3-1)。完整兼容、真机和 LiveContainer 验证仍待完成。最新范围与证据见 [行为依据与验收](XIANGSE_BEHAVIOR_REFERENCE.zh-CN.md)。下文仍保留长期规划，不代表全部条目已完成。
 
 已实现内容、验证证据和未完成项见 [实施记录](XIANGSE_PROGRESS.zh-CN.md)。以下为完整目标，不能将计划条目视为已完成。
 

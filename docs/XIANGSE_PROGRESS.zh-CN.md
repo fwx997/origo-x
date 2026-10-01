@@ -1,12 +1,21 @@
 # 香色书源集成：实施记录
 
-日期：2026-10-01。分支：`feat/xiangse-xbs`，官方基线 `f14f841`。
+更新日期：2026-10-02。分支：`feat/xiangse-xbs`，官方基线 `f14f841`。
 
 ## 当前状态
 
 已实现独立找书、同书找源和按源分类浏览的核心交互，并接入原始 XBS。仍不是香色全功能兼容版。名称、图标、阅读器、字体和 WebDAV 保留 Origo X 仓库原样；没有迁入 dudu 代码或品牌资产。公开基底本就不依赖商业账号/会员服务。
 
 原包核对依据、当前用户目标的逐项验收与边界见 [行为依据与验收](XIANGSE_BEHAVIOR_REFERENCE.zh-CN.md)。本轮取得的是原包资源和规则，没有完整原生源码。
+
+## iOS 体验版交付（2026-10-02）
+
+- 源码已推送到 [fwx997/origo-x](https://github.com/fwx997/origo-x)，默认分支为 `feat/xiangse-xbs`。
+- [下载 IPA 与校验文件](https://github.com/fwx997/origo-x/releases/tag/xbs-preview-3-1)；构建源码提交为 `11f4784de2b7bcb00b86e7d7a8f1ff56469a925f`。
+- [GitHub Actions #3](https://github.com/fwx997/origo-x/actions/runs/36929759448) 成功完成全仓库分析、66 项功能回归、8 项 XPath 测试、iOS release 编译、ARM64 和运行库检查、IPA 完整性检查及 Release 发布。
+- IPA 大小为 24,299,712 字节；Release 同时提供 `SHA256SUMS.txt`、`SOURCE_COMMIT.txt` 和中文说明。
+- 使用独立应用标识 `com.fwx997.origox.xbs`，名称与图标保留上游配置；移除上游开发团队及原作者的 iCloud 容器声明，沿用现有 WebDAV。
+- 本版是未签名核心功能体验版，实际 iPhone / LiveContainer 安装、性能和复杂规则兼容仍待验证，不能视为香色全兼容版。使用方法见 [体验版说明](XBS_IOS_PREVIEW.zh-CN.md)。
 
 ## 已实现并验证
 
@@ -22,7 +31,7 @@
 - 发现任务上限 12，逐源增量显示，失败重试保留成功内容；分类支持多组筛选、追加分页、失败重试和切换取消。批量检测上限 8，JavaScript 同时执行上限 2；取消传播到排队任务、HTTP 和脚本。
 - 书源管理增加名称/域名筛选与批量检测；用户提供检测书名，可以选择只搜书或检测到正文。失败不会删除或禁用源。
 - 修复注册表串行写队列空闲后保留旧 Zone Future 导致的跨测试卡住问题。
-- 新增手动 GitHub Actions 工作流 `.github/workflows/xbs-ios.yml`，包含测试、iOS 编译、未签名 IPA 打包和校验值上传；尚未推送或运行。
+- 新增 GitHub Actions 工作流 `.github/workflows/xbs-ios.yml`，支持分支推送或手动运行，包含测试、iOS 编译、未签名 IPA 打包、校验值和预发布版本上传；已成功运行并交付。
 
 ## 验证证据
 
@@ -54,6 +63,6 @@ flutter test --no-pub --dart-define=XBS_NATIVE_TEST=true test/xbs_javascript_nat
 - 用户自定义分组/排序、规则编辑与导出、在已入架书籍上替换来源并对齐章节进度。
 - 原始源的逐站联网阅读链验证、请求身份与源间会话隔离、解析后台执行和前台阅读优先级。
 - XBS WebDAV 配置的凭据分离、跨版本与跨设备冲突恢复；现有 WebDAV 回归通过不等于这些新增场景已经完成。
-- iOS 编译、真实手机 / LiveContainer 安装与性能验证。本轮没有生成新 IPA；Windows 无法执行 Xcode 构建。
+- 真实手机 / LiveContainer 安装与性能验证。iOS 编译与 IPA 打包已由 GitHub macOS runner 完成；云端构建不等于真机验证。
 
 完整需求与后续阶段见 `XIANGSE_INTEGRATION_PLAN.zh-CN.md`。
