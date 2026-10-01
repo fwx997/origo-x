@@ -95,6 +95,7 @@ dev_dependencies:
   
   # Flutter应用图标生成工具
   flutter_launcher_icons: ^0.11.0
+  test: ^1.31.0
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec

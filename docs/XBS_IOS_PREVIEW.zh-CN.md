@@ -28,4 +28,4 @@
 - 书单、联想词、自定义分组/排序、规则编辑/导出、新增 XBS 同步冲突恢复仍在计划中。
 - Windows 离线回归、macOS 编译和 IPA 结构校验不能替代 iPhone 实测。
 
-详细实现、验证证据与兼容边界见 [实施记录](XIANGSE_PROGRESS.zh-CN.md) 和 [行为依据与验收](XIANGSE_BEHAVIOR_REFERENCE.zh-CN.md)。
+详细实现、验证证据与兼容边界见 [实施记录](https://github.com/fwx997/origo-x/blob/feat/xiangse-xbs/docs/XIANGSE_PROGRESS.zh-CN.md) 和 [行为依据与验收](https://github.com/fwx997/origo-x/blob/feat/xiangse-xbs/docs/XIANGSE_BEHAVIOR_REFERENCE.zh-CN.md)。
