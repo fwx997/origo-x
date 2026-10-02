@@ -2093,10 +2093,10 @@
   "settingsAdditionalSourceProtocolsTitle": "More source protocols",
   "settingsAdditionalSourceProtocolsSubtitle": "Enable support for additional source protocols.",
   "additionalSourcesImport": "Import more source protocols",
-  "additionalSourcesImportTitle": "Import source JSON",
+  "additionalSourcesImportTitle": "Import source JSON / XBS",
   "additionalSourcesImportNotice": "Imported sources are checked before use and remain disabled until you enable them.",
-  "additionalSourcesChooseFile": "Add from JSON file",
-  "additionalSourcesUrlLabel": "Source JSON URL",
+  "additionalSourcesChooseFile": "Add from JSON / XBS file",
+  "additionalSourcesUrlLabel": "Source JSON / XBS URL",
   "additionalSourcesLoadUrl": "Load URL",
   "additionalSourcesPreview": "{supported} available, {partial} partially supported, {unsupported} not supported",
   "@additionalSourcesPreview": {"placeholders":{"supported":{"type":"int"},"partial":{"type":"int"},"unsupported":{"type":"int"}}},
@@ -2108,10 +2108,6 @@
   "@additionalSourcesImported": {"placeholders":{"count":{"type":"int"}}},
   "@settingsSectionGeneral": {
     "description": "Section title grouping language and system toggles"
-  },
-  "settingsSectionAboutSupport": "About & Support",
-  "@settingsSectionAboutSupport": {
-    "description": "Section title grouping donation, about info and contributors"
   },
   "settingsKeepScreenOnTitle": "Keep screen on",
   "@settingsKeepScreenOnTitle": {
@@ -2218,66 +2214,6 @@
   "settingsPageIntro": "Only the options that shape your reading experience.",
   "@settingsPageIntro": {
     "description": "Subtitle under the settings page title"
-  },
-  "settingsSupportDevelopmentTitle": "Support development",
-  "@settingsSupportDevelopmentTitle": {
-    "description": "Settings section title for voluntary donations"
-  },
-  "firstHomeSupportNow": "Support now",
-  "@firstHomeSupportNow": {
-    "description": "Primary action on the first-home developer support introduction"
-  },
-  "firstHomeSupportLater": "Maybe later",
-  "@firstHomeSupportLater": {
-    "description": "Dismiss action on the first-home developer support introduction"
-  },
-  "firstHomeSupportPaperSemanticLabel": "A letter from the Open Reading developer asking for voluntary support",
-  "@firstHomeSupportPaperSemanticLabel": {
-    "description": "Accessibility label for the paper shown in the first-home support introduction"
-  },
-  "settingsSupportDevelopmentCardTitle": "Support continued development",
-  "@settingsSupportDevelopmentCardTitle": {
-    "description": "Title of the voluntary developer support card"
-  },
-  "settingsSupportDevelopmentCardSubtitle": "Building and maintaining Open Reading takes substantial time and effort. If it helps you, voluntary donations are welcome.",
-  "@settingsSupportDevelopmentCardSubtitle": {
-    "description": "Explanation shown on the voluntary developer support card"
-  },
-  "settingsDonationAction": "Donate with WeChat",
-  "@settingsDonationAction": {
-    "description": "Action label that opens the WeChat donation QR code"
-  },
-  "settingsAlipayDonationAction": "Donate with Alipay",
-  "@settingsAlipayDonationAction": {
-    "description": "Action label that opens the Alipay donation QR code"
-  },
-  "settingsDonationDialogTitle": "WeChat donation",
-  "@settingsDonationDialogTitle": {
-    "description": "Title of the WeChat donation QR code dialog"
-  },
-  "settingsDonationDialogHint": "Scan the QR code with WeChat to support continued development. Thank you.",
-  "@settingsDonationDialogHint": {
-    "description": "Instructions shown above the WeChat donation QR code"
-  },
-  "settingsAlipayDonationDialogTitle": "Alipay donation",
-  "@settingsAlipayDonationDialogTitle": {
-    "description": "Title of the Alipay donation QR code dialog"
-  },
-  "settingsAlipayDonationDialogHint": "Scan the QR code with Alipay to support continued development. Thank you.",
-  "@settingsAlipayDonationDialogHint": {
-    "description": "Instructions shown above the Alipay donation QR code"
-  },
-  "settingsDonationVoluntaryNotice": "Donations are entirely optional. They do not unlock features or constitute a purchase or service agreement.",
-  "@settingsDonationVoluntaryNotice": {
-    "description": "Notice clarifying that donations are voluntary and do not unlock features"
-  },
-  "settingsDonationQrCodeLabel": "WeChat donation QR code",
-  "@settingsDonationQrCodeLabel": {
-    "description": "Accessibility label for the WeChat donation QR code image"
-  },
-  "settingsAlipayDonationQrCodeLabel": "Alipay donation QR code",
-  "@settingsAlipayDonationQrCodeLabel": {
-    "description": "Accessibility label for the Alipay donation QR code image"
   },
   "settingsAiSwipeHint": "Swipe through models, tap to switch, long-press to edit or delete.",
   "@settingsAiSwipeHint": {

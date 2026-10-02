@@ -225,20 +225,6 @@ tool/              # 本地开发、官网发布校验与示例服务工具
 [`CODEBASE_DOCUMENTATION.md`](CODEBASE_DOCUMENTATION.md)，版本变化见
 [`CHANGELOG.md`](CHANGELOG.md)。
 
-## 支持开发
-
-开元阅读的设计、开发、测试和持续维护投入了大量时间与精力。如果这个项目对你有帮助，
-欢迎通过微信或支付宝自愿捐赠，支持项目继续迭代。
-
-<div align="center">
-  <img src="assets/images/wechat_donation_qr.png" width="340" alt="微信捐赠二维码">
-  <img src="assets/images/alipay_donation_qr.jpg" width="340" alt="支付宝捐赠二维码">
-  <p>使用微信或支付宝扫码支持持续开发</p>
-</div>
-
-> 捐赠完全自愿，不影响任何功能，也不构成购买或服务承诺。
-> 么么
-
 ## 参与贡献
 
 欢迎提交 Issue、Pull Request、翻译、平台适配和 ORSP 实现。提交任何公开内容时，

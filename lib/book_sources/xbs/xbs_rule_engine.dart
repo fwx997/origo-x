@@ -18,6 +18,7 @@ class XbsRuleEngine {
     Object? rule, {
     bool nodes = false,
     bool content = false,
+    bool first = false,
   }) async {
     if (rule == null || rule == '') return nodes ? [input] : '';
     if (rule is! String) return rule;
@@ -28,7 +29,13 @@ class XbsRuleEngine {
           .replaceFirst(RegExp(r'\|+$'), '');
       final selected = selector.isEmpty
           ? _serializable(input)
-          : await evaluate(input, selector, nodes: nodes, content: content);
+          : await evaluate(
+              input,
+              selector,
+              nodes: nodes,
+              content: content,
+              first: first,
+            );
       return javascript.evaluate(
         rule.substring(scriptIndex + 4),
         config,
@@ -37,7 +44,7 @@ class XbsRuleEngine {
       );
     }
     for (final alternative in rule.split('||')) {
-      final value = _select(input, alternative.trim(), nodes, content);
+      final value = _select(input, alternative.trim(), nodes, content, first);
       if (value is List ? value.isNotEmpty : value != null && value != '') {
         return value;
       }
@@ -49,21 +56,44 @@ class XbsRuleEngine {
     Object? input,
     Object? rule, {
     bool content = false,
+    bool first = false,
   }) async {
-    final result = await evaluate(input, rule, content: content);
+    final result = await evaluate(input, rule, content: content, first: first);
     if (result is List) {
+      if (first) {
+        return result
+                .where((value) => value != null && '$value'.trim().isNotEmpty)
+                .firstOrNull
+                ?.toString() ??
+            '';
+      }
       return result.map((e) => '$e').join(content ? '\n' : '');
     }
     return result == null ? '' : '$result';
   }
 
-  Object? _select(Object? input, String rule, bool nodes, bool content) {
+  Object? _select(
+    Object? input,
+    String rule,
+    bool nodes,
+    bool content,
+    bool first,
+  ) {
     if (rule.isEmpty) return input;
     if ((rule.startsWith("'") && rule.endsWith("'")) ||
         (rule.startsWith('"') && rule.endsWith('"'))) {
       return rule.substring(1, rule.length - 1);
     }
-    if (input is Map || input is List) return _json(input, rule, nodes);
+    if (input is Map || input is List) {
+      final value = _json(input, rule, nodes);
+      if (first && !nodes && value is List) {
+        return value
+                .where((entry) => entry != null && '$entry'.trim().isNotEmpty)
+                .firstOrNull ??
+            '';
+      }
+      return value;
+    }
     final node = input is Node ? input : html.parse('$input').documentElement!;
     if (!rule.startsWith('/') && !rule.startsWith('.')) {
       throw const BookSourceProtocolException('XBS：不支持此选择器语法');
@@ -80,7 +110,12 @@ class XbsRuleEngine {
     final values = query.attrs.isNotEmpty
         ? query.attrs
         : query.nodes.map((node) => node.text);
-    return values.whereType<String>().join(content ? '\n' : '');
+    final strings = values.whereType<String>();
+    if (first) {
+      return strings.where((value) => value.trim().isNotEmpty).firstOrNull ??
+          '';
+    }
+    return strings.join(content ? '\n' : '');
   }
 
   Object? _json(Object? input, String rule, bool nodes) {

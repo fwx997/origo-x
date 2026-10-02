@@ -20,6 +20,8 @@ class HomeMobileTopBar extends StatelessWidget {
   final double titleFontSize;
   final FontWeight titleFontWeight;
   final double horizontalPadding;
+  final Color? backgroundColor;
+  final bool showBottomBorder;
 
   const HomeMobileTopBar({
     super.key,
@@ -29,6 +31,8 @@ class HomeMobileTopBar extends StatelessWidget {
     this.titleFontSize = 34,
     this.titleFontWeight = FontWeight.w700,
     this.horizontalPadding = 16,
+    this.backgroundColor,
+    this.showBottomBorder = true,
   });
 
   @override
@@ -44,20 +48,26 @@ class HomeMobileTopBar extends StatelessWidget {
     final content = Container(
       height: metrics.topBarHeight,
       decoration: BoxDecoration(
-        color: isMaterial3Style
-            ? scheme.surfaceContainerHigh
-            : GlassEffectConfig.chromeSurfaceColor(context),
-        border: Border(
-          bottom: BorderSide(
-            color: (isMaterial3Style ? scheme.outline : scheme.primary)
-                .withValues(
-                  alpha: isMaterial3Style
-                      ? 0.24
-                      : (scheme.brightness == Brightness.light ? 0.08 : 0.12),
+        color:
+            backgroundColor ??
+            (isMaterial3Style
+                ? scheme.surfaceContainerHigh
+                : GlassEffectConfig.chromeSurfaceColor(context)),
+        border: showBottomBorder
+            ? Border(
+                bottom: BorderSide(
+                  color: (isMaterial3Style ? scheme.outline : scheme.primary)
+                      .withValues(
+                        alpha: isMaterial3Style
+                            ? 0.24
+                            : (scheme.brightness == Brightness.light
+                                  ? 0.08
+                                  : 0.12),
+                      ),
+                  width: isMaterial3Style ? 0.7 : 0.5,
                 ),
-            width: isMaterial3Style ? 0.7 : 0.5,
-          ),
-        ),
+              )
+            : null,
       ),
       child: Padding(
         padding: EdgeInsets.fromLTRB(

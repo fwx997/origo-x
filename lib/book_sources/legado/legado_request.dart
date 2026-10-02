@@ -4,7 +4,7 @@ import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
 import 'package:dio/io.dart';
-import 'package:gbk_codec/gbk_codec.dart';
+import 'package:html/parser.dart' as html;
 
 import '../../utils/fast_gbk_decoder.dart';
 import '../protocol/book_source_protocol.dart';
@@ -365,12 +365,18 @@ String _expandVariables(String input, Map<String, String> variables) {
 
 List<int> _encode(String value, String charset) {
   if (charset == 'gbk' || charset == 'gb2312') {
-    return gbk_bytes.encode(value);
+    return encodeGbkFast(value);
   }
   return utf8.encode(value);
 }
 
 String _decode(List<int> bytes, String configured, Headers headers) {
+  if (bytes.length >= 3 &&
+      bytes[0] == 0xef &&
+      bytes[1] == 0xbb &&
+      bytes[2] == 0xbf) {
+    return utf8.decode(bytes.skip(3).toList(), allowMalformed: true);
+  }
   final contentType = headers
       .value(HttpHeaders.contentTypeHeader)
       ?.toLowerCase();
@@ -385,7 +391,7 @@ String _decode(List<int> bytes, String configured, Headers headers) {
           (_supportedCharsets.contains(normalizedHeader) ||
               normalizedHeader == 'gb18030')
       ? normalizedHeader
-      : configured;
+      : _htmlCharset(bytes) ?? configured;
   if (charset == 'gbk' || charset == 'gb2312' || charset == 'gb18030') {
     final encoded = bytes is Uint8List ? bytes : Uint8List.fromList(bytes);
     return decodeGbkFast(
@@ -394,4 +400,30 @@ String _decode(List<int> bytes, String configured, Headers headers) {
     );
   }
   return utf8.decode(bytes, allowMalformed: true);
+}
+
+String? _htmlCharset(List<int> bytes) {
+  // HTML declarations use ASCII even when the document text is GBK/GB18030.
+  final prefix = latin1.decode(bytes.take(16384).toList());
+  if (!prefix.toLowerCase().contains('<meta')) return null;
+  final document = html.parse(prefix);
+  for (final meta in document.querySelectorAll('meta')) {
+    final direct = meta.attributes['charset'];
+    final content =
+        meta.attributes['http-equiv']?.toLowerCase() == 'content-type'
+        ? meta.attributes['content']
+        : null;
+    final charset =
+        (direct ??
+                RegExp(
+                  r'''charset\s*=\s*["']?([^;"'\s]+)''',
+                  caseSensitive: false,
+                ).firstMatch(content ?? '')?.group(1))
+            ?.trim()
+            .toLowerCase();
+    if (_supportedCharsets.contains(charset) || charset == 'gb18030') {
+      return charset;
+    }
+  }
+  return null;
 }

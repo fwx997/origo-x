@@ -633,7 +633,13 @@ extension _HomeShellLayoutPart on _HomeShellPageState {
               : title,
           leading: leading,
           trailing: trailing,
-          titleFontSize: leading == null ? 34 : 22,
+          backgroundColor: currentPage is BookSourcesPage
+              ? PageStyleHelper.palette(context).backgroundStart
+              : null,
+          showBottomBorder: currentPage is! BookSourcesPage,
+          titleFontSize: currentPage is BookSourcesPage
+              ? 24
+              : (leading == null ? 34 : 22),
         ),
       ),
     );

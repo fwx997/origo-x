@@ -15,6 +15,28 @@ final Map<int, String> _gbkCodeToChar = () {
   return mapped;
 }();
 
+final Map<String, int> _charToGbkCode = {
+  for (final entry in _gbkCodeToChar.entries) entry.value: entry.key,
+};
+
+/// Encodes request text using the same mapping as the fast decoder.
+/// Reject unmappable characters instead of truncating their Unicode values.
+Uint8List encodeGbkFast(String text) {
+  final bytes = BytesBuilder(copy: false);
+  for (final rune in text.runes) {
+    if (rune <= 0x7f) {
+      bytes.addByte(rune);
+      continue;
+    }
+    final code = _charToGbkCode[String.fromCharCode(rune)];
+    if (code == null) {
+      throw FormatException('Character cannot be encoded as GBK', text);
+    }
+    bytes.add([code >> 8, code & 0xff]);
+  }
+  return bytes.takeBytes();
+}
+
 bool isLikelyValidGbkByteStream(Uint8List bytes) {
   int i = 0;
   while (i < bytes.length) {

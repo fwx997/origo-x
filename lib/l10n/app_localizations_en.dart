@@ -1998,17 +1998,17 @@ class AppLocalizationsEn extends AppLocalizations {
   String get additionalSourcesImport => 'Import more source protocols';
 
   @override
-  String get additionalSourcesImportTitle => 'Import source JSON';
+  String get additionalSourcesImportTitle => 'Import source JSON / XBS';
 
   @override
   String get additionalSourcesImportNotice =>
       'Imported sources are checked before use and remain disabled until you enable them.';
 
   @override
-  String get additionalSourcesChooseFile => 'Add from JSON file';
+  String get additionalSourcesChooseFile => 'Add from JSON / XBS file';
 
   @override
-  String get additionalSourcesUrlLabel => 'Source JSON URL';
+  String get additionalSourcesUrlLabel => 'Source JSON / XBS URL';
 
   @override
   String get additionalSourcesLoadUrl => 'Load URL';
@@ -2034,9 +2034,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String additionalSourcesImported(int count) {
     return 'Imported $count sources';
   }
-
-  @override
-  String get settingsSectionAboutSupport => 'About & Support';
 
   @override
   String get settingsKeepScreenOnTitle => 'Keep screen on';
@@ -2118,57 +2115,6 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get settingsPageIntro =>
       'Only the options that shape your reading experience.';
-
-  @override
-  String get settingsSupportDevelopmentTitle => 'Support development';
-
-  @override
-  String get firstHomeSupportNow => 'Support now';
-
-  @override
-  String get firstHomeSupportLater => 'Maybe later';
-
-  @override
-  String get firstHomeSupportPaperSemanticLabel =>
-      'A letter from the Open Reading developer asking for voluntary support';
-
-  @override
-  String get settingsSupportDevelopmentCardTitle =>
-      'Support continued development';
-
-  @override
-  String get settingsSupportDevelopmentCardSubtitle =>
-      'Building and maintaining Open Reading takes substantial time and effort. If it helps you, voluntary donations are welcome.';
-
-  @override
-  String get settingsDonationAction => 'Donate with WeChat';
-
-  @override
-  String get settingsAlipayDonationAction => 'Donate with Alipay';
-
-  @override
-  String get settingsDonationDialogTitle => 'WeChat donation';
-
-  @override
-  String get settingsDonationDialogHint =>
-      'Scan the QR code with WeChat to support continued development. Thank you.';
-
-  @override
-  String get settingsAlipayDonationDialogTitle => 'Alipay donation';
-
-  @override
-  String get settingsAlipayDonationDialogHint =>
-      'Scan the QR code with Alipay to support continued development. Thank you.';
-
-  @override
-  String get settingsDonationVoluntaryNotice =>
-      'Donations are entirely optional. They do not unlock features or constitute a purchase or service agreement.';
-
-  @override
-  String get settingsDonationQrCodeLabel => 'WeChat donation QR code';
-
-  @override
-  String get settingsAlipayDonationQrCodeLabel => 'Alipay donation QR code';
 
   @override
   String get settingsAiSwipeHint =>

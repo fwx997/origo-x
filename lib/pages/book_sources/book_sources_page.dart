@@ -21,6 +21,7 @@ import 'book_source_management_page.dart';
 import 'source_search_page.dart';
 import 'widgets/sourced_book_widgets.dart';
 import 'widgets/source_filter_widgets.dart';
+import 'widgets/source_picker.dart';
 
 /// 发现页：只负责展示书籍内容。
 ///
@@ -502,6 +503,7 @@ class _BookSourcesPageState extends State<BookSourcesPage> {
           client: _client,
           shelfService: _shelfService,
           initialBook: book,
+          initialSourceId: book == null ? _selectedSourceId : null,
         ),
       ),
     );
@@ -551,11 +553,11 @@ class _BookSourcesPageState extends State<BookSourcesPage> {
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
                           if (useRailNavigation) _buildRailHeader(),
-                          _buildSectionTabs(),
-                          if (_sourcesFor(_section).length > 1) ...[
+                          if (_sourcesFor(_section).isNotEmpty) ...[
                             const SizedBox(height: 8),
                             _buildSourceScope(_sourcesFor(_section)),
                           ],
+                          _buildSectionTabs(),
                           const SizedBox(height: 4),
                         ],
                       ),
@@ -605,68 +607,63 @@ class _BookSourcesPageState extends State<BookSourcesPage> {
   }
 
   Widget _buildSectionTabs() {
-    final scheme = Theme.of(context).colorScheme;
-    return SegmentedButton<_DiscoverSection>(
-      showSelectedIcon: false,
-      segments: [
-        ButtonSegment(
+    return SourceFilterControl<_DiscoverSection>(
+      controlKey: const Key('discoverSectionTabs'),
+      label: '',
+      value: _section,
+      items: [
+        DropdownMenuItem(
           value: _DiscoverSection.recommended,
-          icon: const Icon(Icons.auto_awesome_outlined),
-          label: Text(context.l10n.discoverRecommended),
+          child: Text(context.l10n.discoverRecommended),
         ),
-        ButtonSegment(
+        DropdownMenuItem(
           value: _DiscoverSection.categories,
-          icon: const Icon(Icons.category_outlined),
-          label: Text(context.l10n.discoverCategories),
+          child: Text(context.l10n.discoverCategories),
         ),
-        ButtonSegment(
+        DropdownMenuItem(
           value: _DiscoverSection.latest,
-          icon: const Icon(Icons.update_rounded),
-          label: Text(context.l10n.discoverLatest),
+          child: Text(context.l10n.discoverLatest),
         ),
       ],
-      selected: {_section},
-      onSelectionChanged: (selection) {
-        if (selection.isEmpty) return;
-        unawaited(_changeSection(selection.first));
+      onChanged: (section) {
+        if (section != null) unawaited(_changeSection(section));
       },
-      style: ButtonStyle(
-        minimumSize: const WidgetStatePropertyAll(Size(44, 48)),
-        side: WidgetStatePropertyAll(BorderSide(color: scheme.outlineVariant)),
-      ),
     );
   }
 
   Widget _buildSourceScope(List<RegisteredBookSource> sources) {
-    return SizedBox(
+    final selected = sources.where((source) => source.id == _selectedSourceId);
+    final label = selected.isEmpty ? '全部站点' : selected.first.name;
+    return Row(
       key: const Key('bookSourceDiscoverScopeControl'),
-      height:
-          48 +
-          (MediaQuery.textScalerOf(context).scale(14) - 14).clamp(
-            0,
-            double.infinity,
+      children: [
+        Expanded(
+          child: Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.titleSmall,
           ),
-      child: ListView(
-        scrollDirection: Axis.horizontal,
-        children: [
-          ChoiceChip(
-            key: const Key('bookSourceDiscoverScopeAll'),
-            selected: _selectedSourceId == null,
-            label: Text(context.l10n.statsRangeAll),
-            onSelected: (_) => _changeSourceScope(null),
-          ),
-          const SizedBox(width: 8),
-          for (final source in sources) ...[
-            ChoiceChip(
-              key: Key('bookSourceDiscoverScope-${source.id}'),
-              selected: _selectedSourceId == source.id,
-              label: Text(source.name),
-              onSelected: (_) => _changeSourceScope(source.id),
-            ),
-            const SizedBox(width: 8),
-          ],
-        ],
-      ),
+        ),
+        TextButton(
+          style: sourceTextActionStyle(context),
+          onPressed: _openSearch,
+          child: const Text('搜索'),
+        ),
+        TextButton(
+          style: sourceTextActionStyle(context),
+          key: const Key('bookSourceDiscoverSwitch'),
+          onPressed: () async {
+            final selected = await showSourcePicker(
+              context,
+              sources: sources,
+              selectedId: _selectedSourceId,
+            );
+            if (mounted && selected != null) _changeSourceScope(selected.id);
+          },
+          child: const Text('切换'),
+        ),
+      ],
     );
   }
 
@@ -781,24 +778,13 @@ class _BookSourcesPageState extends State<BookSourcesPage> {
             ],
           ),
           const SizedBox(height: 12),
-          SizedBox(
-            height: 242,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              itemCount: shelf.items.length,
-              separatorBuilder: (_, _) => const SizedBox(width: 12),
-              itemBuilder: (context, index) {
-                final result = SourcedBook(
-                  source: shelf.source,
-                  book: shelf.items[index],
-                );
-                return SourcedBookCard(
-                  result: result,
-                  onTap: () => _actions.showBookDetails(result),
-                );
-              },
+          for (final book in shelf.items)
+            SourcedBookListTile(
+              result: SourcedBook(source: shelf.source, book: book),
+              onTap: () => _actions.showBookDetails(
+                SourcedBook(source: shelf.source, book: book),
+              ),
             ),
-          ),
         ],
       ),
     );
@@ -828,7 +814,7 @@ class _BookSourcesPageState extends State<BookSourcesPage> {
           category: selected,
           onTap: () => _openCategoryPicker(categories),
         ),
-        bottomPadding: 12,
+        bottomPadding: 2,
       ),
       if (selected.category.filterGroups.isNotEmpty)
         _paddedSectionSliver(
@@ -891,36 +877,11 @@ class _BookSourcesPageState extends State<BookSourcesPage> {
 
   Widget _buildCategoryFilters(_SourcedCategory category) {
     final groups = category.category.filterGroups;
-    final fields = [
-      for (var index = 0; index < groups.length; index++)
-        _categoryFilterField(category, groups[index], index),
-    ];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        SourceFilterGrid(children: fields.take(2).toList(growable: false)),
-        if (fields.length > 2)
-          Padding(
-            padding: const EdgeInsets.only(top: 8),
-            child: ExpansionTile(
-              key: PageStorageKey(
-                'moreFilters:${category.source.id}:${category.id}',
-              ),
-              tilePadding: const EdgeInsets.symmetric(horizontal: 12),
-              childrenPadding: const EdgeInsets.fromLTRB(0, 4, 0, 8),
-              shape: const Border(),
-              collapsedShape: const Border(),
-              title: Text(
-                '更多筛选（${fields.length - 2}）',
-                style: Theme.of(context).textTheme.labelLarge,
-              ),
-              children: [
-                SourceFilterGrid(
-                  children: fields.skip(2).toList(growable: false),
-                ),
-              ],
-            ),
-          ),
+        for (var index = 0; index < groups.length; index++)
+          _categoryFilterField(category, groups[index], index),
       ],
     );
   }
@@ -986,7 +947,7 @@ class _BookSourcesPageState extends State<BookSourcesPage> {
       padding: EdgeInsets.fromLTRB(16, 0, 16, bottomPadding),
       sliver: SliverList.separated(
         itemCount: books.length,
-        separatorBuilder: (_, _) => const SizedBox(height: 10),
+        separatorBuilder: (_, _) => const Divider(height: 1, indent: 76),
         itemBuilder: (context, index) {
           final result = books[index];
           return _centerSectionChild(
@@ -1168,51 +1129,33 @@ class _CategoryPickerButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Material(
-      color: scheme.surfaceContainerLow,
-      borderRadius: BorderRadius.circular(16),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        key: const Key('bookSourceCategoryPickerButton'),
-        onTap: onTap,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(minHeight: 64),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-            child: Row(
-              children: [
-                Icon(Icons.category_outlined, color: scheme.primary),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        category.name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.titleMedium
-                            ?.copyWith(fontWeight: FontWeight.w700),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        category.source.name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: scheme.onSurfaceVariant,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Icon(Icons.unfold_more_rounded, color: scheme.onSurfaceVariant),
-              ],
+    return InkWell(
+      key: const Key('bookSourceCategoryPickerButton'),
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(6),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                category.name,
+                style: Theme.of(
+                  context,
+                ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
+              ),
             ),
-          ),
+            const SizedBox(width: 8),
+            Flexible(
+              child: Text(
+                category.source.name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ),
+            const Icon(Icons.expand_more, size: 18),
+          ],
         ),
       ),
     );

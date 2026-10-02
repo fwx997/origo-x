@@ -1927,17 +1927,17 @@ class AppLocalizationsJa extends AppLocalizations {
   String get additionalSourcesImport => '追加プロトコルのソースをインポート';
 
   @override
-  String get additionalSourcesImportTitle => 'ソース JSON をインポート';
+  String get additionalSourcesImportTitle => 'ソース JSON / XBS をインポート';
 
   @override
   String get additionalSourcesImportNotice =>
       'インポートしたソースは事前確認され、有効にするまで無効のままです。';
 
   @override
-  String get additionalSourcesChooseFile => 'JSON ファイルから追加';
+  String get additionalSourcesChooseFile => 'JSON / XBS ファイルから追加';
 
   @override
-  String get additionalSourcesUrlLabel => 'ソース JSON URL';
+  String get additionalSourcesUrlLabel => 'ソース JSON / XBS URL';
 
   @override
   String get additionalSourcesLoadUrl => 'URL から読み込む';
@@ -1963,9 +1963,6 @@ class AppLocalizationsJa extends AppLocalizations {
   String additionalSourcesImported(int count) {
     return '$count 件のソースをインポートしました';
   }
-
-  @override
-  String get settingsSectionAboutSupport => 'アプリ情報とサポート';
 
   @override
   String get settingsKeepScreenOnTitle => '画面を常にオン';
@@ -2043,55 +2040,6 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String get settingsPageIntro => '読書体験に本当に影響する項目だけを残しています。';
-
-  @override
-  String get settingsSupportDevelopmentTitle => '開発を支援';
-
-  @override
-  String get firstHomeSupportNow => '今すぐ支援';
-
-  @override
-  String get firstHomeSupportLater => 'また今度';
-
-  @override
-  String get firstHomeSupportPaperSemanticLabel => '開元閲読の開発者からの任意支援についての手紙';
-
-  @override
-  String get settingsSupportDevelopmentCardTitle => '継続的な開発を支援';
-
-  @override
-  String get settingsSupportDevelopmentCardSubtitle =>
-      '開発と保守には多くの時間と労力がかかっています。開元閲読が役に立った場合は、任意の寄付で支援いただけます。';
-
-  @override
-  String get settingsDonationAction => 'WeChat で寄付';
-
-  @override
-  String get settingsAlipayDonationAction => 'Alipay で寄付';
-
-  @override
-  String get settingsDonationDialogTitle => 'WeChat で寄付';
-
-  @override
-  String get settingsDonationDialogHint =>
-      'WeChat で QR コードを読み取ってください。継続的な開発へのご支援に感謝します。';
-
-  @override
-  String get settingsAlipayDonationDialogTitle => 'Alipay で寄付';
-
-  @override
-  String get settingsAlipayDonationDialogHint =>
-      'Alipay で QR コードを読み取ってください。継続的な開発へのご支援に感謝します。';
-
-  @override
-  String get settingsDonationVoluntaryNotice =>
-      '寄付は完全に任意です。機能の利用条件ではなく、購入またはサービス契約にも該当しません。';
-
-  @override
-  String get settingsDonationQrCodeLabel => 'WeChat 寄付用 QR コード';
-
-  @override
-  String get settingsAlipayDonationQrCodeLabel => 'Alipay 寄付用 QR コード';
 
   @override
   String get settingsAiSwipeHint => '左右にスワイプしてモデルを選択、タップで切替、長押しで編集・削除。';

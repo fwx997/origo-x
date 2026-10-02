@@ -28,10 +28,10 @@ jobs:
       - name: Check source integration
         run: |
           flutter analyze --no-fatal-infos --no-fatal-warnings
-          flutter test test/source_task_pool_test.dart test/xbs_runtime_test.dart test/book_search_filter_test.dart test/source_finding_flows_test.dart test/source_ui_layout_test.dart test/source_search_incremental_test.dart test/book_source_search_page_test.dart test/book_source_discovery_page_test.dart test/book_source_management_page_test.dart test/webdav_online_content_sync_test.dart
+          flutter test --concurrency=2
           flutter test packages/xpath_selector_html_parser/test/html_test.dart
       - name: Build unsigned iOS app
-        run: flutter build ios --release --no-codesign --build-number=${{ github.run_number }}
+        run: flutter build ios --release --no-codesign
       - name: Verify iOS payload
         run: |
           app=build/ios/iphoneos/Runner.app

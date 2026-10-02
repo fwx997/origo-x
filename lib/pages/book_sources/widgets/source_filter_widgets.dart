@@ -1,7 +1,18 @@
 import 'package:flutter/material.dart';
-import 'package:xxread/utils/page_style_helper.dart';
 
-import 'sourced_book_widgets.dart';
+ButtonStyle sourceTextActionStyle(BuildContext context) => ButtonStyle(
+  minimumSize: WidgetStatePropertyAll(Size(36, 32)),
+  padding: WidgetStatePropertyAll(
+    EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+  ),
+  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+  textStyle: WidgetStatePropertyAll(
+    Theme.of(context).textTheme.bodySmall?.copyWith(fontSize: 13),
+  ),
+  shape: WidgetStatePropertyAll(
+    RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(6))),
+  ),
+);
 
 /// Shared by search and discovery so new source controls follow the page theme.
 class SourceFilterControl<T> extends StatelessWidget {
@@ -22,46 +33,47 @@ class SourceFilterControl<T> extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final palette = PageStyleHelper.palette(context);
-    return Container(
-      decoration: bookSourcePanelDecoration(context, radius: 14),
-      padding: const EdgeInsets.fromLTRB(12, 8, 10, 6),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+    return Padding(
+      key: controlKey,
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Wrap(
+        crossAxisAlignment: WrapCrossAlignment.center,
+        spacing: 4,
+        runSpacing: 4,
         children: [
-          Text(
-            label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: theme.textTheme.labelSmall?.copyWith(
-              color: palette.textMuted,
-            ),
-          ),
-          DropdownButtonHideUnderline(
-            child: DropdownButton<T>(
-              key: controlKey,
-              value: value,
-              isExpanded: true,
-              isDense: true,
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              borderRadius: BorderRadius.circular(16),
-              dropdownColor: palette.cardStrong,
-              menuMaxHeight: 360,
-              icon: Icon(
-                Icons.expand_more_rounded,
-                size: 20,
-                color: palette.iconMuted,
+          if (label.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(right: 4),
+              child: Text(
+                label,
+                style: Theme.of(context).textTheme.labelMedium,
               ),
-              style: theme.textTheme.bodyMedium?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
-              items: items,
-              onChanged: onChanged,
             ),
-          ),
+          for (final item in items) _option(context, item),
         ],
       ),
+    );
+  }
+
+  Widget _option(BuildContext context, DropdownMenuItem<T> item) {
+    final selected = item.value == value;
+    final scheme = Theme.of(context).colorScheme;
+    return TextButton(
+      key: ValueKey('${controlKey.toString()}:${item.value}'),
+      onPressed: item.enabled ? () => onChanged(item.value) : null,
+      style: TextButton.styleFrom(
+        foregroundColor: selected ? scheme.primary : scheme.onSurfaceVariant,
+        backgroundColor: Colors.transparent,
+        minimumSize: const Size(0, 30),
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
+        textStyle: Theme.of(context).textTheme.bodySmall?.copyWith(
+          fontSize: 13,
+          fontWeight: selected ? FontWeight.w700 : FontWeight.w400,
+        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+      ),
+      child: Semantics(selected: selected, child: item.child),
     );
   }
 }
@@ -71,19 +83,9 @@ class SourceFilterGrid extends StatelessWidget {
   final List<Widget> children;
 
   @override
-  Widget build(BuildContext context) => LayoutBuilder(
-    builder: (context, constraints) {
-      final largeText = MediaQuery.textScalerOf(context).scale(14) > 19;
-      final columns = constraints.maxWidth >= 330 && !largeText ? 2 : 1;
-      final width = (constraints.maxWidth - (columns - 1) * 10) / columns;
-      return Wrap(
-        spacing: 10,
-        runSpacing: 10,
-        children: children
-            .map((child) => SizedBox(width: width, child: child))
-            .toList(),
-      );
-    },
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: children,
   );
 }
 

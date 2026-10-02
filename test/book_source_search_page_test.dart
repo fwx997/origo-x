@@ -18,6 +18,78 @@ void main() {
     SharedPreferences.setMockInitialValues({});
   });
 
+  testWidgets('search history survives reopening and clears from storage', (
+    tester,
+  ) async {
+    final client = _ScopeTrackingClient();
+    addTearDown(client.close);
+    Widget page() => MaterialApp(
+      localizationsDelegates: AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
+      home: SourceSearchPage(
+        sources: [_source()],
+        client: client,
+        shelfService: BookSourceShelfService(client: client),
+      ),
+    );
+    await tester.pumpWidget(page());
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const Key('bookSourceQueryControl')),
+      '剑来',
+    );
+    await tester.testTextInput.receiveAction(TextInputAction.search);
+    await tester.pumpAndSettle();
+    await tester.pumpWidget(const SizedBox());
+    await tester.pumpWidget(page());
+    await tester.pumpAndSettle();
+    expect(find.widgetWithText(ActionChip, '剑来'), findsOneWidget);
+    client.searchedSourceIds.clear();
+    await tester.tap(find.widgetWithText(ActionChip, '剑来'));
+    await tester.pumpAndSettle();
+    expect(client.searchedSourceIds, ['source-a']);
+    await tester.tap(find.byKey(const Key('bookSourceSearchClearButton')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('bookSourceClearHistory')));
+    await tester.pumpAndSettle();
+    expect(find.widgetWithText(ActionChip, '剑来'), findsNothing);
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getStringList('source_search_history_v1'), isEmpty);
+  });
+
+  testWidgets('source picker searches host and cancel preserves scope', (
+    tester,
+  ) async {
+    final client = _ScopeTrackingClient();
+    addTearDown(client.close);
+    await tester.pumpWidget(
+      MaterialApp(
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: SourceSearchPage(
+          sources: [_source()],
+          client: client,
+          initialSourceId: 'source-a',
+          shelfService: BookSourceShelfService(client: client),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('bookSourceSearchSwitch')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const Key('sourcePickerQuery')),
+      'example.org',
+    );
+    await tester.pump();
+    expect(find.byKey(const Key('sourcePicker-source-a')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('sourcePicker-all')));
+    await tester.pump();
+    await tester.tap(find.text('取消'));
+    await tester.pumpAndSettle();
+    expect(find.text('搜索范围 · Source A'), findsOneWidget);
+  });
+
   testWidgets('discover page shows the empty-source call to action', (
     tester,
   ) async {
@@ -147,54 +219,55 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('scope chips switch between all sources and a single source', (
-    tester,
-  ) async {
-    tester.view.devicePixelRatio = 1;
-    tester.view.physicalSize = const Size(390, 1000);
-    addTearDown(tester.view.reset);
+  testWidgets(
+    'source picker switches between all sources and a single source',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(390, 1000);
+      addTearDown(tester.view.reset);
 
-    final sourceA = _source();
-    final sourceB = RegisteredBookSource(
-      id: 'source-b',
-      name: 'Source B',
-      description: '',
-      manifestUrl: Uri.parse('https://example.org/b/source.json'),
-      apiBaseUrl: Uri.parse('https://example.org/b/api/'),
-      protocolVersion: '1.1',
-      languages: const ['en'],
-      capabilities: const {'search'},
-      enabled: true,
-      addedAt: DateTime.utc(2026, 7, 13),
-    );
-    final client = _ScopeTrackingClient();
-    await tester.pumpWidget(
-      MaterialApp(
-        localizationsDelegates: AppLocalizations.localizationsDelegates,
-        supportedLocales: AppLocalizations.supportedLocales,
-        home: SourceSearchPage(
-          sources: [sourceA, sourceB],
-          client: client,
-          shelfService: BookSourceShelfService(client: client),
+      final sourceA = _source();
+      final sourceB = RegisteredBookSource(
+        id: 'source-b',
+        name: 'Source B',
+        description: '',
+        manifestUrl: Uri.parse('https://example.org/b/source.json'),
+        apiBaseUrl: Uri.parse('https://example.org/b/api/'),
+        protocolVersion: '1.1',
+        languages: const ['en'],
+        capabilities: const {'search'},
+        enabled: true,
+        addedAt: DateTime.utc(2026, 7, 13),
+      );
+      final client = _ScopeTrackingClient();
+      await tester.pumpWidget(
+        MaterialApp(
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          home: SourceSearchPage(
+            sources: [sourceA, sourceB],
+            client: client,
+            shelfService: BookSourceShelfService(client: client),
+          ),
         ),
-      ),
-    );
-    await tester.pumpAndSettle();
+      );
+      await tester.pumpAndSettle();
 
-    // 默认“全部”：两个书源都被请求。
-    final queryField = find.byKey(const Key('bookSourceQueryControl'));
-    await tester.enterText(queryField, 'test');
-    await tester.testTextInput.receiveAction(TextInputAction.search);
-    await tester.pumpAndSettle();
-    expect(client.searchedSourceIds, ['source-a', 'source-b']);
+      // 默认“全部”：两个书源都被请求。
+      final queryField = find.byKey(const Key('bookSourceQueryControl'));
+      await tester.enterText(queryField, 'test');
+      await tester.testTextInput.receiveAction(TextInputAction.search);
+      await tester.pumpAndSettle();
+      expect(client.searchedSourceIds, ['source-a', 'source-b']);
 
-    // 选中单个书源 Chip：自动用当前关键词只搜该书源。
-    client.searchedSourceIds.clear();
-    await tester.tap(find.widgetWithText(ChoiceChip, 'Source B'));
-    await tester.pumpAndSettle();
-    expect(client.searchedSourceIds, ['source-b']);
-    expect(tester.takeException(), isNull);
-  });
+      // 选中单个书源 Chip：自动用当前关键词只搜该书源。
+      client.searchedSourceIds.clear();
+      await _pickSource(tester, 'bookSourceSearchSwitch', 'source-b');
+      await tester.pumpAndSettle();
+      expect(client.searchedSourceIds, ['source-b']);
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   testWidgets('ignores an old search after changing source scope', (
     tester,
@@ -233,7 +306,7 @@ void main() {
     await tester.enterText(queryField, 'test');
     await tester.testTextInput.receiveAction(TextInputAction.search);
     await tester.pump();
-    await tester.tap(find.widgetWithText(ChoiceChip, 'Source B'));
+    await _pickSource(tester, 'bookSourceSearchSwitch', 'source-b');
     await tester.pump();
     client.releaseSourceB();
     await tester.pump();
@@ -357,4 +430,19 @@ class _PagingBookSourceClient extends BookSourceClient {
       hasMore: page == 1,
     );
   }
+}
+
+Future<void> _pickSource(
+  WidgetTester tester,
+  String entryKey,
+  String id,
+) async {
+  await tester.tap(find.byKey(Key(entryKey)));
+  await tester.pump();
+  await tester.pump(const Duration(milliseconds: 350));
+  await tester.tap(find.byKey(Key('sourcePicker-$id')));
+  await tester.pump();
+  await tester.tap(find.byKey(const Key('sourcePickerConfirm')));
+  await tester.pump();
+  await tester.pump(const Duration(milliseconds: 350));
 }

@@ -10,8 +10,9 @@ List<List<Selector>> parseSelectGroup(String xpath) {
 
   for (final _path in combine) {
     final path = _path.trim();
-    final xpathItem =
-        xpathGroup.allMatches(path).map((e) => e.group(0)!.trim());
+    final xpathItem = xpathGroup
+        .allMatches(path)
+        .map((e) => e.group(0)!.trim());
     selectorList.add(xpathItem.map(_parseSelector).toList());
   }
 
@@ -67,12 +68,13 @@ Selector _parseSelector(String input) {
   }
 
   return Selector(
-      selectorType: selectorType,
-      axes: SelectorAxes(
-        nodeTest: nodeTest,
-        axis: axis,
-        predicate: predicateList,
-      ));
+    selectorType: selectorType,
+    axes: SelectorAxes(
+      nodeTest: nodeTest,
+      axis: axis,
+      predicate: predicateList,
+    ),
+  );
 }
 
 Selector? _parseSimpleSelector(SelectorType selectorType, String source) {
@@ -88,23 +90,17 @@ Selector? _parseSimpleSelector(SelectorType selectorType, String source) {
   // parents
   if (source == '..') {
     return Selector(
-        selectorType: selectorType,
-        axes: SelectorAxes(
-          axis: AxesAxis.parent,
-          nodeTest: '*',
-          predicate: [],
-        ));
+      selectorType: selectorType,
+      axes: SelectorAxes(axis: AxesAxis.parent, nodeTest: '*', predicate: []),
+    );
   }
 
   // self
   if (source == '.') {
     return Selector(
-        selectorType: selectorType,
-        axes: SelectorAxes(
-          axis: AxesAxis.self,
-          nodeTest: '*',
-          predicate: [],
-        ));
+      selectorType: selectorType,
+      axes: SelectorAxes(axis: AxesAxis.self, nodeTest: '*', predicate: []),
+    );
   }
 
   // node()
@@ -125,11 +121,7 @@ Selector? _parseSimpleSelector(SelectorType selectorType, String source) {
     return Selector(
       selectorType: selectorType,
       function: function.group(0),
-      axes: SelectorAxes(
-        nodeTest: '*',
-        axis: AxesAxis.self,
-        predicate: [],
-      ),
+      axes: SelectorAxes(nodeTest: '*', axis: AxesAxis.self, predicate: []),
     );
   }
   return null;
@@ -155,7 +147,8 @@ List<String?> parseAttr({
       } else if (lastSelector.function != null) {
         // function
         result.add(
-            elementFunction(node: element, function: lastSelector.function!));
+          elementFunction(node: element, function: lastSelector.function!),
+        );
       } else if (lastSelector.axes.axis == AxesAxis.attribute) {
         // attr
         if (lastSelector.axes.nodeTest == '*') {
@@ -175,6 +168,7 @@ String? elementFunction({required XPathNode node, required String function}) {
     return node.attributes[function.substring(1)];
   } else {
     switch (function) {
+      case '.':
       case 'text()':
       case 'string()':
         return node.text ?? '';

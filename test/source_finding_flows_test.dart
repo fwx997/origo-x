@@ -32,8 +32,6 @@ void main() {
             : second.future;
       };
     await _searchPage(tester, client, [_source('A')]);
-    await tester.tap(find.byKey(const Key('bookSearchMatch')));
-    await tester.pumpAndSettle();
     await tester.tap(find.text('精确匹配').last);
     await tester.pumpAndSettle();
     await _search(tester, 'Wanted', settle: false);
@@ -142,11 +140,7 @@ void main() {
         _book('b', '烽火戏诸侯', author: '其他作者'),
       ]);
     await _searchPage(tester, client, [_source('A')]);
-    await tester.tap(find.byKey(const Key('bookSearchField')));
-    await tester.pumpAndSettle();
     await tester.tap(find.text('作者').last);
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('bookSearchMatch')));
     await tester.pumpAndSettle();
     await tester.tap(find.text('精确匹配').last);
     await tester.pumpAndSettle();
@@ -179,11 +173,7 @@ void main() {
     await tester.tap(find.text('2 个来源'));
     await tester.pumpAndSettle();
     expect(find.textContaining('B'), findsWidgets);
-    await tester.tap(
-      find
-          .byWidgetPredicate((widget) => widget is Text && widget.data == '剑来')
-          .last,
-    );
+    await tester.tap(find.widgetWithText(ListTile, 'B'));
     await tester.pumpAndSettle();
     expect(client.detailSources.last, _source('B').id);
   });
@@ -278,9 +268,7 @@ void main() {
         _source('B'),
       ], settle: false);
       expect(find.text('快源书籍'), findsOneWidget);
-      await tester.tap(
-        find.byKey(Key('bookSourceDiscoverScope-${_source('B').id}')),
-      );
+      await _pickSource(tester, 'bookSourceDiscoverSwitch', _source('B').id);
       await tester.pump();
       expect(find.text('快源书籍'), findsNothing);
       slow.complete(_discovery('慢源书籍'));
@@ -311,7 +299,6 @@ void main() {
       await tester.tap(find.text('Categories'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 50));
-      await tester.tap(find.byKey(const Key('categoryFilter:class')));
       await tester.pump(const Duration(milliseconds: 350));
       await tester.tap(find.text('玄幻').last);
       await tester.pumpAndSettle();
@@ -351,9 +338,7 @@ void main() {
       await tester.tap(find.text('Categories'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 50));
-      await tester.tap(
-        find.byKey(Key('bookSourceDiscoverScope-${_source('B').id}')),
-      );
+      await _pickSource(tester, 'bookSourceDiscoverSwitch', _source('B').id);
       await tester.pumpAndSettle();
       expect(oldToken?.isCancelled, isTrue);
       expect(find.textContaining('temporarily unavailable'), findsOneWidget);
@@ -515,4 +500,19 @@ class _Client extends BookSourceClient {
     int page = 1,
     int pageSize = 20,
   }) => browseResult?.call(source, category, page) ?? Future.value(_page([]));
+}
+
+Future<void> _pickSource(
+  WidgetTester tester,
+  String entryKey,
+  String id,
+) async {
+  await tester.tap(find.byKey(Key(entryKey)));
+  await tester.pump();
+  await tester.pump(const Duration(milliseconds: 350));
+  await tester.tap(find.byKey(Key('sourcePicker-$id')));
+  await tester.pump();
+  await tester.tap(find.byKey(const Key('sourcePickerConfirm')));
+  await tester.pump();
+  await tester.pump(const Duration(milliseconds: 350));
 }

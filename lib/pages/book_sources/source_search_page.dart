@@ -2,6 +2,7 @@
 // 技术要点：Flutter UI、并发书源请求、按源分页加载更多。
 
 import 'dart:async';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:flutter/material.dart';
 import 'package:xxread/book_sources/models/registered_book_source.dart';
@@ -15,6 +16,7 @@ import 'package:xxread/utils/page_style_helper.dart';
 
 import 'widgets/sourced_book_widgets.dart';
 import 'widgets/source_filter_widgets.dart';
+import 'widgets/source_picker.dart';
 
 /// 跨已启用书源的聚合搜索页。
 ///
@@ -24,6 +26,7 @@ class SourceSearchPage extends StatefulWidget {
   final BookSourceClient client;
   final BookSourceShelfService shelfService;
   final SourcedBook? initialBook;
+  final String? initialSourceId;
 
   const SourceSearchPage({
     super.key,
@@ -31,6 +34,7 @@ class SourceSearchPage extends StatefulWidget {
     required this.client,
     required this.shelfService,
     this.initialBook,
+    this.initialSourceId,
   });
 
   /// 解析实际参与搜索的书源集合；发现页与测试也复用这份规则。
@@ -61,6 +65,10 @@ class _SourceSearchPageState extends State<SourceSearchPage> {
   );
 
   String? _selectedSourceId;
+  static const _historyKey = 'source_search_history_v1';
+  List<String> _history = const [];
+  Future<void> _historyWrites = Future<void>.value();
+  bool _historyEdited = false;
   List<SourcedBook> _results = const [];
   BookSearchField _field = BookSearchField.any;
   BookSearchMatch _match = BookSearchMatch.all;
@@ -84,6 +92,13 @@ class _SourceSearchPageState extends State<SourceSearchPage> {
   void initState() {
     super.initState();
     _reference = widget.initialBook;
+    _selectedSourceId =
+        widget.sources.any(
+          (source) => source.enabled && source.id == widget.initialSourceId,
+        )
+        ? widget.initialSourceId
+        : null;
+    unawaited(_loadHistory());
     _queryController.text = _reference?.book.title ?? '';
     _scrollController.addListener(_handleScroll);
     // 进入搜索页直接聚焦输入框，用户可立即输入。
@@ -133,6 +148,7 @@ class _SourceSearchPageState extends State<SourceSearchPage> {
       if (_searching && mounted) setState(() => _searching = false);
       return;
     }
+    _rememberQuery(query);
     final generation = ++_searchGeneration;
     _cancellation.cancel();
     final cancellation = _cancellation = BookDownloadCancellation();
@@ -322,7 +338,17 @@ class _SourceSearchPageState extends State<SourceSearchPage> {
         .where((source) => source.enabled)
         .toList(growable: false);
     return Scaffold(
-      appBar: AppBar(titleSpacing: 0, title: _buildQueryField(enabledSources)),
+      appBar: AppBar(
+        backgroundColor: PageStyleHelper.palette(context).backgroundStart,
+        surfaceTintColor: Colors.transparent,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        toolbarHeight:
+            60 + (MediaQuery.textScalerOf(context).scale(15) - 15) * 1.5,
+        leadingWidth: 48,
+        titleSpacing: 0,
+        title: _buildQueryField(enabledSources),
+      ),
       body: Container(
         decoration: BoxDecoration(
           gradient: PageStyleHelper.backgroundGradient(context),
@@ -366,18 +392,29 @@ class _SourceSearchPageState extends State<SourceSearchPage> {
         enabled: canSearch,
         textInputAction: TextInputAction.search,
         onSubmitted: (_) => _search(),
-        style: Theme.of(context).textTheme.bodyLarge,
+        style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontSize: 15),
         decoration: InputDecoration(
-          hintText: context.l10n.bookSourcesSearchHint,
+          isDense: true,
+          prefixIconConstraints: const BoxConstraints(
+            minWidth: 36,
+            minHeight: 34,
+          ),
+          suffixIconConstraints: const BoxConstraints(
+            minWidth: 34,
+            minHeight: 34,
+          ),
+          hintText: _selectedSourceId == null
+              ? '搜索全部站点'
+              : '搜索 ${_scopeLabel()}',
           prefixIcon: const Icon(Icons.search_rounded, size: 20),
           filled: true,
           fillColor: Theme.of(context).colorScheme.surfaceContainerHighest,
           contentPadding: const EdgeInsets.symmetric(
             horizontal: 12,
-            vertical: 10,
+            vertical: 8,
           ),
           border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular(8),
             borderSide: BorderSide.none,
           ),
           suffixIcon: _queryController.text.isEmpty
@@ -388,6 +425,13 @@ class _SourceSearchPageState extends State<SourceSearchPage> {
                     context,
                   ).deleteButtonTooltip,
                   icon: const Icon(Icons.close_rounded),
+                  iconSize: 18,
+                  padding: const EdgeInsets.all(8),
+                  constraints: const BoxConstraints(
+                    minWidth: 36,
+                    minHeight: 36,
+                  ),
+                  visualDensity: VisualDensity.compact,
                   onPressed: _clearSearch,
                 ),
         ),
@@ -397,32 +441,33 @@ class _SourceSearchPageState extends State<SourceSearchPage> {
   }
 
   Widget _buildScopeChips(List<RegisteredBookSource> enabledSources) {
-    return SizedBox(
+    return Padding(
       key: const Key('bookSourceScopeControl'),
-      height:
-          48 +
-          (MediaQuery.textScalerOf(context).scale(14) - 14).clamp(
-            0,
-            double.infinity,
-          ),
-      child: ListView(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      padding: const EdgeInsets.fromLTRB(16, 6, 16, 4),
+      child: Row(
         children: [
-          ChoiceChip(
-            selected: _selectedSourceId == null,
-            label: Text(context.l10n.statsRangeAll),
-            onSelected: (_) => _changeScope(null),
-          ),
-          const SizedBox(width: 8),
-          for (final source in enabledSources) ...[
-            ChoiceChip(
-              selected: _selectedSourceId == source.id,
-              label: Text(source.name),
-              onSelected: (_) => _changeScope(source.id),
+          Expanded(
+            child: Text(
+              '搜索范围 · ${_scopeLabel()}',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.labelLarge,
             ),
-            const SizedBox(width: 8),
-          ],
+          ),
+          TextButton(
+            style: sourceTextActionStyle(context),
+            key: const Key('bookSourceSearchSwitch'),
+            onPressed: () async {
+              _queryFocus.unfocus();
+              final selected = await showSourcePicker(
+                context,
+                sources: enabledSources,
+                selectedId: _selectedSourceId,
+              );
+              if (mounted && selected != null) _changeScope(selected.id);
+            },
+            child: const Text('切换'),
+          ),
         ],
       ),
     );
@@ -459,11 +504,7 @@ class _SourceSearchPageState extends State<SourceSearchPage> {
       return const Center(child: CircularProgressIndicator());
     }
     if (!_hasSearched) {
-      return _buildMessage(
-        icon: Icons.manage_search_rounded,
-        title: context.l10n.bookSourcesSearch,
-        message: context.l10n.bookSourcesSearchHint,
-      );
+      return _buildHistory();
     }
     if (groups.isEmpty && !_hasMore && !_loadingMore) {
       return _buildMessage(
@@ -487,7 +528,8 @@ class _SourceSearchPageState extends State<SourceSearchPage> {
                     '${context.l10n.bookSourcesSearch}'
                     ' · ${_scopeLabel()} · ${groups.length} 本书',
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w700,
+                      fontWeight: FontWeight.w500,
+                      fontSize: 13,
                     ),
                   ),
                 ),
@@ -509,7 +551,7 @@ class _SourceSearchPageState extends State<SourceSearchPage> {
           padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
           sliver: SliverList.separated(
             itemCount: groups.length,
-            separatorBuilder: (_, _) => const SizedBox(height: 10),
+            separatorBuilder: (_, _) => const Divider(height: 1, indent: 76),
             itemBuilder: (context, index) {
               final group = groups[index];
               return Center(
@@ -683,6 +725,7 @@ class _SourceSearchPageState extends State<SourceSearchPage> {
             ),
           ),
           TextButton(
+            style: sourceTextActionStyle(context),
             onPressed: () => setState(() => _reference = null),
             child: const Text('普通搜索'),
           ),
@@ -722,7 +765,8 @@ class _SourceSearchPageState extends State<SourceSearchPage> {
               child: TextButton.icon(
                 style: TextButton.styleFrom(
                   padding: const EdgeInsets.symmetric(horizontal: 8),
-                  minimumSize: const Size(44, 44),
+                  minimumSize: const Size(0, 28),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   visualDensity: VisualDensity.compact,
                 ),
                 onPressed: () => _chooseBookSource(group),
@@ -776,9 +820,15 @@ class _SourceSearchPageState extends State<SourceSearchPage> {
               child: ListView.separated(
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
                 itemCount: group.length,
-                separatorBuilder: (_, _) => const SizedBox(height: 10),
-                itemBuilder: (context, index) => SourcedBookListTile(
-                  result: group[index],
+                separatorBuilder: (_, _) =>
+                    const Divider(height: 1, indent: 76),
+                itemBuilder: (context, index) => ListTile(
+                  leading: const Icon(Icons.language_rounded),
+                  title: Text(group[index].source.name),
+                  subtitle: Text(
+                    group[index].book.latestChapter ?? group[index].book.author,
+                  ),
+                  trailing: const Icon(Icons.chevron_right_rounded),
                   onTap: () {
                     Navigator.of(context).pop();
                     _actions.showBookDetails(group[index]);
@@ -791,6 +841,69 @@ class _SourceSearchPageState extends State<SourceSearchPage> {
       ),
     );
   }
+
+  Future<void> _loadHistory() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (!mounted || _historyEdited) return;
+      setState(() => _history = prefs.getStringList(_historyKey) ?? const []);
+    } catch (_) {
+      // Search remains available when local preferences cannot be read.
+    }
+  }
+
+  void _saveHistory(List<String> entries) {
+    _historyEdited = true;
+    _history = entries;
+    _historyWrites = _historyWrites
+        .then((_) async {
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setStringList(_historyKey, entries);
+        })
+        .catchError((Object _) {});
+  }
+
+  void _rememberQuery(String query) => _saveHistory(
+    [query, ..._history.where((entry) => entry != query)].take(20).toList(),
+  );
+
+  Widget _buildHistory() => ListView(
+    key: const Key('bookSourceSearchHistory'),
+    padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+    children: [
+      Row(
+        children: [
+          const Expanded(child: Text('搜索历史')),
+          TextButton(
+            style: sourceTextActionStyle(context),
+            key: const Key('bookSourceClearHistory'),
+            onPressed: _history.isEmpty
+                ? null
+                : () => setState(() => _saveHistory([])),
+            child: const Text('清空'),
+          ),
+        ],
+      ),
+      if (_history.isEmpty) const Text('输入书名或作者，开始找书'),
+      Wrap(
+        spacing: 8,
+        runSpacing: 6,
+        children: _history.map(_historyChip).toList(),
+      ),
+    ],
+  );
+
+  Widget _historyChip(String query) => ActionChip(
+    visualDensity: VisualDensity.compact,
+    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+    side: BorderSide.none,
+    labelStyle: Theme.of(context).textTheme.bodySmall,
+    label: Text(query, maxLines: 1, overflow: TextOverflow.ellipsis),
+    onPressed: () {
+      _queryController.text = query;
+      unawaited(_search());
+    },
+  );
 
   Widget _buildMessage({
     required IconData icon,

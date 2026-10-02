@@ -40,7 +40,6 @@ import 'package:xxread/utils/ui_style.dart';
 import 'package:xxread/widgets/app_brand_icon.dart';
 import 'package:xxread/widgets/accent_color_picker_sheet.dart';
 import 'package:xxread/widgets/contributors_view.dart';
-import 'package:xxread/widgets/developer_support_card.dart';
 import 'package:xxread/widgets/reader_settings_controls.dart';
 import 'package:xxread/widgets/side_toast.dart';
 import 'package:xxread/widgets/update_check_gate.dart';
@@ -135,21 +134,9 @@ class _QqMarkPainter extends CustomPainter {
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
-class SettingsPageController extends ChangeNotifier {
-  int _supportRevealRequest = 0;
-
-  int get supportRevealRequest => _supportRevealRequest;
-
-  void revealSupportSection() {
-    _supportRevealRequest += 1;
-    notifyListeners();
-  }
-}
-
 class SettingsPage extends StatefulWidget {
-  const SettingsPage({super.key, this.controller, this.cacheManager});
+  const SettingsPage({super.key, this.cacheManager});
 
-  final SettingsPageController? controller;
   final AppCacheManager? cacheManager;
 
   @override
@@ -159,7 +146,6 @@ class SettingsPage extends StatefulWidget {
 class _SettingsPageState extends State<SettingsPage> {
   final ReaderHttpAIService _aiService = ReaderHttpAIService();
   final ScrollController _scrollController = ScrollController();
-  final GlobalKey _supportSectionKey = GlobalKey();
   late final AppCacheManager _cacheManager;
 
   bool _enableAutoSave = true;
@@ -185,7 +171,6 @@ class _SettingsPageState extends State<SettingsPage> {
   String _appVersion = '0.9.1';
   bool _isCheckingForUpdates = false;
   AIProviderSettings? _activeAiSettings;
-  int _lastSupportRevealRequest = 0;
   AppCacheUsage? _cacheUsage;
   bool _loadingCacheUsage = true;
 
@@ -196,63 +181,11 @@ class _SettingsPageState extends State<SettingsPage> {
     unawaited(_loadAppVersion());
     unawaited(_refreshCacheUsage());
     _loadSettings();
-    _attachSettingsController(widget.controller);
     // 状态栏设置现在由_SettingsPageWrapper处理
   }
 
   @override
-  void didUpdateWidget(covariant SettingsPage oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.controller == widget.controller) return;
-    oldWidget.controller?.removeListener(_handleSupportRevealRequest);
-    _attachSettingsController(widget.controller);
-  }
-
-  void _attachSettingsController(SettingsPageController? controller) {
-    _lastSupportRevealRequest = controller?.supportRevealRequest ?? 0;
-    controller?.addListener(_handleSupportRevealRequest);
-    if (_lastSupportRevealRequest > 0) {
-      _scheduleSupportSectionReveal();
-    }
-  }
-
-  void _handleSupportRevealRequest() {
-    final request = widget.controller?.supportRevealRequest ?? 0;
-    if (request == _lastSupportRevealRequest) return;
-    _lastSupportRevealRequest = request;
-    _scheduleSupportSectionReveal();
-  }
-
-  void _scheduleSupportSectionReveal() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      final sectionContext = _supportSectionKey.currentContext;
-      if (sectionContext == null) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) _revealSupportSection();
-        });
-        return;
-      }
-      _revealSupportSection();
-    });
-  }
-
-  void _revealSupportSection() {
-    final sectionContext = _supportSectionKey.currentContext;
-    if (sectionContext == null) return;
-    unawaited(
-      Scrollable.ensureVisible(
-        sectionContext,
-        alignment: 0.12,
-        duration: const Duration(milliseconds: 620),
-        curve: Curves.easeInOutCubic,
-      ),
-    );
-  }
-
-  @override
   void dispose() {
-    widget.controller?.removeListener(_handleSupportRevealRequest);
     _scrollController.dispose();
     super.dispose();
   }
@@ -632,22 +565,6 @@ class _SettingsPageState extends State<SettingsPage> {
                 icon: Icons.extension_outlined,
               ),
             ],
-          ),
-          const SizedBox(height: 20),
-          KeyedSubtree(
-            key: _supportSectionKey,
-            child: _buildSectionCard(
-              title: l10n.settingsSectionAboutSupport,
-              icon: Icons.volunteer_activism_outlined,
-              children: [
-                DeveloperSupportCard(
-                  onWechatTap: () =>
-                      _showDonationDialog(DeveloperDonationMethod.wechat),
-                  onAlipayTap: () =>
-                      _showDonationDialog(DeveloperDonationMethod.alipay),
-                ),
-              ],
-            ),
           ),
           const SizedBox(height: 20),
           _buildAboutCard(),
@@ -2229,13 +2146,6 @@ class _SettingsPageState extends State<SettingsPage> {
         kind: SideToastKind.error,
       );
     }
-  }
-
-  void _showDonationDialog(DeveloperDonationMethod method) {
-    showDialog<void>(
-      context: context,
-      builder: (_) => DeveloperDonationDialog(method: method),
-    );
   }
 
   Future<void> _openTelegramChannel() async {

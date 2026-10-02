@@ -3623,7 +3623,7 @@ abstract class AppLocalizations {
   /// No description provided for @additionalSourcesImportTitle.
   ///
   /// In en, this message translates to:
-  /// **'Import source JSON'**
+  /// **'Import source JSON / XBS'**
   String get additionalSourcesImportTitle;
 
   /// No description provided for @additionalSourcesImportNotice.
@@ -3635,13 +3635,13 @@ abstract class AppLocalizations {
   /// No description provided for @additionalSourcesChooseFile.
   ///
   /// In en, this message translates to:
-  /// **'Add from JSON file'**
+  /// **'Add from JSON / XBS file'**
   String get additionalSourcesChooseFile;
 
   /// No description provided for @additionalSourcesUrlLabel.
   ///
   /// In en, this message translates to:
-  /// **'Source JSON URL'**
+  /// **'Source JSON / XBS URL'**
   String get additionalSourcesUrlLabel;
 
   /// No description provided for @additionalSourcesLoadUrl.
@@ -3685,12 +3685,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Imported {count} sources'**
   String additionalSourcesImported(int count);
-
-  /// Section title grouping donation, about info and contributors
-  ///
-  /// In en, this message translates to:
-  /// **'About & Support'**
-  String get settingsSectionAboutSupport;
 
   /// Switch title for keeping screen on
   ///
@@ -3835,96 +3829,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Only the options that shape your reading experience.'**
   String get settingsPageIntro;
-
-  /// Settings section title for voluntary donations
-  ///
-  /// In en, this message translates to:
-  /// **'Support development'**
-  String get settingsSupportDevelopmentTitle;
-
-  /// Primary action on the first-home developer support introduction
-  ///
-  /// In en, this message translates to:
-  /// **'Support now'**
-  String get firstHomeSupportNow;
-
-  /// Dismiss action on the first-home developer support introduction
-  ///
-  /// In en, this message translates to:
-  /// **'Maybe later'**
-  String get firstHomeSupportLater;
-
-  /// Accessibility label for the paper shown in the first-home support introduction
-  ///
-  /// In en, this message translates to:
-  /// **'A letter from the Open Reading developer asking for voluntary support'**
-  String get firstHomeSupportPaperSemanticLabel;
-
-  /// Title of the voluntary developer support card
-  ///
-  /// In en, this message translates to:
-  /// **'Support continued development'**
-  String get settingsSupportDevelopmentCardTitle;
-
-  /// Explanation shown on the voluntary developer support card
-  ///
-  /// In en, this message translates to:
-  /// **'Building and maintaining Open Reading takes substantial time and effort. If it helps you, voluntary donations are welcome.'**
-  String get settingsSupportDevelopmentCardSubtitle;
-
-  /// Action label that opens the WeChat donation QR code
-  ///
-  /// In en, this message translates to:
-  /// **'Donate with WeChat'**
-  String get settingsDonationAction;
-
-  /// Action label that opens the Alipay donation QR code
-  ///
-  /// In en, this message translates to:
-  /// **'Donate with Alipay'**
-  String get settingsAlipayDonationAction;
-
-  /// Title of the WeChat donation QR code dialog
-  ///
-  /// In en, this message translates to:
-  /// **'WeChat donation'**
-  String get settingsDonationDialogTitle;
-
-  /// Instructions shown above the WeChat donation QR code
-  ///
-  /// In en, this message translates to:
-  /// **'Scan the QR code with WeChat to support continued development. Thank you.'**
-  String get settingsDonationDialogHint;
-
-  /// Title of the Alipay donation QR code dialog
-  ///
-  /// In en, this message translates to:
-  /// **'Alipay donation'**
-  String get settingsAlipayDonationDialogTitle;
-
-  /// Instructions shown above the Alipay donation QR code
-  ///
-  /// In en, this message translates to:
-  /// **'Scan the QR code with Alipay to support continued development. Thank you.'**
-  String get settingsAlipayDonationDialogHint;
-
-  /// Notice clarifying that donations are voluntary and do not unlock features
-  ///
-  /// In en, this message translates to:
-  /// **'Donations are entirely optional. They do not unlock features or constitute a purchase or service agreement.'**
-  String get settingsDonationVoluntaryNotice;
-
-  /// Accessibility label for the WeChat donation QR code image
-  ///
-  /// In en, this message translates to:
-  /// **'WeChat donation QR code'**
-  String get settingsDonationQrCodeLabel;
-
-  /// Accessibility label for the Alipay donation QR code image
-  ///
-  /// In en, this message translates to:
-  /// **'Alipay donation QR code'**
-  String get settingsAlipayDonationQrCodeLabel;
 
   /// Hint above the horizontal AI model card list
   ///

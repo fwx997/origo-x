@@ -54,7 +54,7 @@ void main() {
     expect(find.text('Source A picks'), findsOneWidget);
     expect(find.text('Source B picks'), findsOneWidget);
 
-    await tester.tap(find.byKey(const Key('bookSourceDiscoverScope-source-b')));
+    await _pickSource(tester, 'bookSourceDiscoverSwitch', 'source-b');
     await tester.pumpAndSettle();
 
     expect(find.text('Source A picks'), findsNothing);
@@ -282,9 +282,7 @@ void main() {
     },
   );
 
-  testWidgets('details sheet keeps its drag handle below the top safe area', (
-    tester,
-  ) async {
+  testWidgets('details header and actions respect safe areas', (tester) async {
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(430, 900);
     tester.view.padding = const FakeViewPadding(top: 44);
@@ -304,12 +302,16 @@ void main() {
     await tester.tap(find.byKey(const Key('openBookDetails')));
     await tester.pumpAndSettle();
 
-    final sheetRect = tester.getRect(find.byType(BottomSheet));
-    expect(sheetRect.top, greaterThanOrEqualTo(60));
+    final header = tester.getRect(find.byType(BackButton).last);
+    expect(header.top, greaterThanOrEqualTo(44));
+    final action = tester.getRect(
+      find.byKey(const Key('bookSourceReadButton')),
+    );
+    expect(action.bottom, lessThanOrEqualTo(900));
   });
 
   testWidgets(
-    'switching to shelf options smoothly shrinks the existing sheet',
+    'shelf options stay on the detail page and can return to reading',
     (tester) async {
       tester.view.devicePixelRatio = 1;
       tester.view.physicalSize = const Size(430, 900);
@@ -327,19 +329,24 @@ void main() {
 
       await tester.tap(find.byKey(const Key('openBookDetails')));
       await tester.pumpAndSettle();
-      final initialHeight = tester.getSize(find.byType(BottomSheet)).height;
+      final initialHeight = tester
+          .getSize(find.byKey(const Key('bookSourceDetailsPage')))
+          .height;
 
       await tester.tap(find.byKey(const Key('bookSourceAddToShelfButton')));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 110));
-      final animatedHeight = tester.getSize(find.byType(BottomSheet)).height;
+      final animatedHeight = tester
+          .getSize(find.byKey(const Key('bookSourceDetailsPage')))
+          .height;
 
       await tester.pumpAndSettle();
-      final optionsHeight = tester.getSize(find.byType(BottomSheet)).height;
+      final optionsHeight = tester
+          .getSize(find.byKey(const Key('bookSourceDetailsPage')))
+          .height;
 
-      expect(optionsHeight, lessThan(initialHeight - 100));
-      expect(animatedHeight, lessThan(initialHeight));
-      expect(animatedHeight, greaterThan(optionsHeight));
+      expect(optionsHeight, initialHeight);
+      expect(animatedHeight, initialHeight);
       expect(find.byKey(const Key('bookSourceShelfOptions')), findsOneWidget);
     },
   );
@@ -421,7 +428,7 @@ void main() {
 
     expect(find.byKey(const Key('bookSourceAddFailed')), findsOneWidget);
     expect(find.byKey(const Key('bookSourceAddRetryButton')), findsOneWidget);
-    expect(find.byType(BottomSheet), findsOneWidget);
+    expect(find.byKey(const Key('bookSourceDetailsPage')), findsOneWidget);
   });
 
   testWidgets('local download progress stays in the sheet and can continue', (
@@ -451,7 +458,7 @@ void main() {
     );
     shelfService.completeDownload();
     await tester.pumpAndSettle();
-    expect(find.byType(BottomSheet), findsNothing);
+    expect(find.byKey(const Key('bookSourceDetailsPage')), findsNothing);
   });
 
   testWidgets('reading from the details sheet hands off to paper transition', (
@@ -768,4 +775,19 @@ BookSourceSearchPage _page(List<BookSourceBook> items) {
     total: items.length,
     hasMore: false,
   );
+}
+
+Future<void> _pickSource(
+  WidgetTester tester,
+  String entryKey,
+  String id,
+) async {
+  await tester.tap(find.byKey(Key(entryKey)));
+  await tester.pump();
+  await tester.pump(const Duration(milliseconds: 350));
+  await tester.tap(find.byKey(Key('sourcePicker-$id')));
+  await tester.pump();
+  await tester.tap(find.byKey(const Key('sourcePickerConfirm')));
+  await tester.pump();
+  await tester.pump(const Duration(milliseconds: 350));
 }

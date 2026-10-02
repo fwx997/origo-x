@@ -26,10 +26,11 @@ List<XPathNode<T>> execute<T>({
         for (var i = 0; i < axisXPathNode.length; i++) {
           final element = axisXPathNode[i];
           if (!_matchSelector(
-              selector: selector,
-              element: element,
-              position: i,
-              length: axisXPathNode.length)) {
+            selector: selector,
+            element: element,
+            position: i,
+            length: axisXPathNode.length,
+          )) {
             removeIndex.add(i);
           }
         }
@@ -251,7 +252,8 @@ bool _multipleCompare({
   final result = evaluator.eval(eval, {});
   if (result is bool) return result;
   throw FormatException(
-      'Expression parse error, raw: $predicate, replaced: $predicate');
+    'Expression parse error, raw: $predicate, replaced: $predicate',
+  );
 }
 
 bool _singleCompare({
@@ -299,6 +301,11 @@ bool? _equalMatch(XPathNode node, RegExpMatch? reg) {
     final op = reg.namedGroup('op')!;
     final notValue = reg.namedGroup('not') == 'not';
     bool not(bool value) => notValue ? !value : value;
+    if (key == '@*') {
+      return not(
+        node.attributes.values.any((value) => opString(value, rightValue, op)),
+      );
+    }
     final leftValue = elementFunction(node: node, function: key);
     if (leftValue == null) return false;
     return not(opString(leftValue, rightValue, op));

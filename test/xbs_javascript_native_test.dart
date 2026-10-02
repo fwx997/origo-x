@@ -4,6 +4,7 @@ import 'package:xxread/book_sources/services/book_download_cancellation.dart';
 import 'package:xxread/book_sources/services/source_task_pool.dart';
 import 'package:xxread/book_sources/xbs/xbs_javascript.dart';
 import 'package:xxread/book_sources/xbs/xbs_runtime.dart';
+import 'package:xxread/book_sources/xbs/xbs_rule_engine.dart';
 import 'package:xxread/book_sources/xbs/xbs_source.dart';
 import 'package:xxread/book_sources/xbs/xbs_discovery.dart';
 import 'package:xxread/book_sources/legado/legado_request.dart';
@@ -12,6 +13,27 @@ import 'package:xxread/book_sources/legado/legado_request.dart';
 /// built/available to the test process. No mock engine is used in this suite.
 void main() {
   group('native XBS JavaScript', () {
+    test('cover postprocessing receives one image URL', () async {
+      final js = XbsQuickJs();
+      addTearDown(js.close);
+      final engine = XbsRuleEngine(js, {}, {});
+      final cover = await engine.text(
+        '<img src="/cover.jpg"><img src="/avatar.png">',
+        '//img/@src||@js:return "https://cdn.books.test" + result;',
+        first: true,
+      );
+      expect(cover, 'https://cdn.books.test/cover.jpg');
+      expect(
+        await engine.text(
+          {
+            'covers': ['/cover.jpg', '/avatar.png'],
+          },
+          'covers||@js:return "https://cdn.books.test" + result;',
+          first: true,
+        ),
+        'https://cdn.books.test/cover.jpg',
+      );
+    });
     test(
       'array filters preserve numeric values and the legacy filter alias',
       () async {
@@ -114,12 +136,16 @@ void main() {
               'httpParams: {q: params.keyWord, page: params.pageIndex}};',
           'JSParser':
               'function functionName(config,params,result) {'
-              'return JSON.parse(result).items.map(b => ({bookName:b.name,detailUrl:b.id}));}',
+              'return JSON.parse(result).items.map(b => ({bookName:b.name,detailUrl:b.id,cover:["/cover.jpg","/avatar.png"]}));}',
         },
       }).toRegisteredSource();
       final result = await runtime.search(source, '中 文');
       expect(result.items.single.id, '42');
       expect(result.items.single.title, 'Book');
+      expect(
+        result.items.single.coverUrl,
+        Uri.parse('https://books.test/cover.jpg'),
+      );
       expect(transport.request.method, LegadoRequestMethod.post);
       expect(Uri.splitQueryString(transport.request.body!), {
         'q': '中 文',

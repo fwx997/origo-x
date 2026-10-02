@@ -1913,16 +1913,16 @@ class AppLocalizationsZh extends AppLocalizations {
   String get additionalSourcesImport => '导入更多协议书源';
 
   @override
-  String get additionalSourcesImportTitle => '导入书源 JSON';
+  String get additionalSourcesImportTitle => '导入书源 JSON / XBS';
 
   @override
   String get additionalSourcesImportNotice => '导入内容会先进行兼容性预检，并保持停用，需由你主动开启。';
 
   @override
-  String get additionalSourcesChooseFile => '从 JSON 文件添加';
+  String get additionalSourcesChooseFile => '从 JSON / XBS 文件添加';
 
   @override
-  String get additionalSourcesUrlLabel => '书源 JSON 地址';
+  String get additionalSourcesUrlLabel => '书源 JSON / XBS 地址';
 
   @override
   String get additionalSourcesLoadUrl => '从 URL 加载';
@@ -1948,9 +1948,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String additionalSourcesImported(int count) {
     return '已导入 $count 个书源';
   }
-
-  @override
-  String get settingsSectionAboutSupport => '关于与支持';
 
   @override
   String get settingsKeepScreenOnTitle => '保持屏幕常亮';
@@ -2027,52 +2024,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get settingsPageIntro => '只保留真正影响阅读体验的选项。';
-
-  @override
-  String get settingsSupportDevelopmentTitle => '支持开发';
-
-  @override
-  String get firstHomeSupportNow => '立即支持';
-
-  @override
-  String get firstHomeSupportLater => '再说吧';
-
-  @override
-  String get firstHomeSupportPaperSemanticLabel => '开元阅读开发者的自愿支持说明';
-
-  @override
-  String get settingsSupportDevelopmentCardTitle => '支持持续开发';
-
-  @override
-  String get settingsSupportDevelopmentCardSubtitle =>
-      '开发和维护投入了大量时间与精力。如果开元阅读对你有帮助，欢迎自愿捐赠支持。';
-
-  @override
-  String get settingsDonationAction => '微信捐赠';
-
-  @override
-  String get settingsAlipayDonationAction => '支付宝捐赠';
-
-  @override
-  String get settingsDonationDialogTitle => '微信捐赠';
-
-  @override
-  String get settingsDonationDialogHint => '请使用微信扫描二维码。感谢你对持续开发的支持。';
-
-  @override
-  String get settingsAlipayDonationDialogTitle => '支付宝捐赠';
-
-  @override
-  String get settingsAlipayDonationDialogHint => '请使用支付宝扫描二维码。感谢你对持续开发的支持。';
-
-  @override
-  String get settingsDonationVoluntaryNotice => '捐赠完全自愿，不影响任何功能，也不构成购买或服务承诺。';
-
-  @override
-  String get settingsDonationQrCodeLabel => '微信捐赠二维码';
-
-  @override
-  String get settingsAlipayDonationQrCodeLabel => '支付宝捐赠二维码';
 
   @override
   String get settingsAiSwipeHint => '左右滑动选择模型，点击切换，长按编辑或删除。';
@@ -6091,16 +6042,16 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get additionalSourcesImport => '匯入更多協議書源';
 
   @override
-  String get additionalSourcesImportTitle => '匯入書源 JSON';
+  String get additionalSourcesImportTitle => '匯入書源 JSON / XBS';
 
   @override
   String get additionalSourcesImportNotice => '匯入內容會先進行相容性預檢，並保持停用，需由你主動開啟。';
 
   @override
-  String get additionalSourcesChooseFile => '從 JSON 檔案新增';
+  String get additionalSourcesChooseFile => '從 JSON / XBS 檔案新增';
 
   @override
-  String get additionalSourcesUrlLabel => '書源 JSON 網址';
+  String get additionalSourcesUrlLabel => '書源 JSON / XBS 網址';
 
   @override
   String get additionalSourcesLoadUrl => '從 URL 載入';
@@ -6126,9 +6077,6 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String additionalSourcesImported(int count) {
     return '已匯入 $count 個書源';
   }
-
-  @override
-  String get settingsSectionAboutSupport => '關於與支持';
 
   @override
   String get settingsKeepScreenOnTitle => '保持螢幕恆亮';
@@ -6205,52 +6153,6 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String get settingsPageIntro => '只保留真正影響閱讀體驗的選項。';
-
-  @override
-  String get settingsSupportDevelopmentTitle => '支持開發';
-
-  @override
-  String get firstHomeSupportNow => '立即支持';
-
-  @override
-  String get firstHomeSupportLater => '再說吧';
-
-  @override
-  String get firstHomeSupportPaperSemanticLabel => '開元閱讀開發者的自願支持說明';
-
-  @override
-  String get settingsSupportDevelopmentCardTitle => '支持持續開發';
-
-  @override
-  String get settingsSupportDevelopmentCardSubtitle =>
-      '開發與維護投入了大量時間和心力。如果開元閱讀對你有幫助，歡迎自願捐贈支持。';
-
-  @override
-  String get settingsDonationAction => '微信捐贈';
-
-  @override
-  String get settingsAlipayDonationAction => '支付寶捐贈';
-
-  @override
-  String get settingsDonationDialogTitle => '微信捐贈';
-
-  @override
-  String get settingsDonationDialogHint => '請使用微信掃描二維碼。感謝你對持續開發的支持。';
-
-  @override
-  String get settingsAlipayDonationDialogTitle => '支付寶捐贈';
-
-  @override
-  String get settingsAlipayDonationDialogHint => '請使用支付寶掃描二維碼。感謝你對持續開發的支持。';
-
-  @override
-  String get settingsDonationVoluntaryNotice => '捐贈完全自願，不影響任何功能，也不構成購買或服務承諾。';
-
-  @override
-  String get settingsDonationQrCodeLabel => '微信捐贈二維碼';
-
-  @override
-  String get settingsAlipayDonationQrCodeLabel => '支付寶捐贈二維碼';
 
   @override
   String get settingsAiSwipeHint => '左右滑動選擇模型，點擊切換，長按編輯或刪除。';

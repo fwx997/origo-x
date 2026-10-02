@@ -143,13 +143,6 @@ lib/
 - `.github/workflows/release.yml` 在 GitHub Release 完成后仍通过受控 SSH 导入官网镜像，并使用 `tool/official_site/verify_official_download.py` 下载、核对官网 arm64 APK 的元数据、大小和 SHA-256。
 - `marketing/app-store/` 保存官网 WebP 的原始截图来源；界面更新时需要同步向独立官网仓库提交新的 `app/static/product/*-latest.webp`。
 
-## 首次首页支持引导
-
-- `widgets/first_home_support_overlay.dart`：正视透明纸张的卷轴展开、悬浮、退出动画与两个操作按钮；系统开启减少动态效果时直接展示完成态。
-- `services/core/first_home_support_intro_service.dart`：以 SharedPreferences 键 `first_home_support_intro_seen_v1` 原子领取一次性展示资格。
-- `assets/images/cyber_begging_paper.png`：无背景 RGBA 纸张素材；阴影与悬浮层次由运行时 UI 绘制，不写入图片本身。
-- “立即支持”切换到设置页并滚动到捐赠卡片；“再说吧”关闭浮层。入口只在当前会话刚完成欢迎协议时请求展示，已领取后不重复出现。
-
 ## 字体架构
 
 - `FontCatalog` 维护 App 字体与阅读字体两套内置语义目录；用户字体作为共享资产同时合并到两套候选列表。

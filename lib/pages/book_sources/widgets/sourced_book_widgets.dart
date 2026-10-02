@@ -2,9 +2,9 @@
 // 技术要点：Flutter UI、底部弹窗、书架服务调用。
 
 import 'dart:async';
-import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'source_filter_widgets.dart';
 import 'package:provider/provider.dart';
 import 'package:xxread/book_sources/models/registered_book_source.dart';
 import 'package:xxread/book_sources/protocol/book_source_protocol.dart';
@@ -144,13 +144,12 @@ class SourcedBookListTile extends StatelessWidget {
       borderRadius: BorderRadius.circular(18),
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: bookSourcePanelDecoration(context, radius: 18),
+        padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 10),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             _BookCoverThumb(book: book),
-            const SizedBox(width: 14),
+            const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -161,13 +160,16 @@ class SourcedBookListTile extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                       fontWeight: FontWeight.w700,
-                      fontSize: 16,
+                      fontSize: 15,
+                      height: 1.35,
                     ),
                   ),
                   const SizedBox(height: 3),
                   Text(
                     [
                       book.author,
+                      ...book.categories,
+                      if (book.status?.isNotEmpty ?? false) book.status!,
                       result.source.name,
                     ].where((item) => item.isNotEmpty).join(' · '),
                     maxLines: 1,
@@ -175,7 +177,7 @@ class SourcedBookListTile extends StatelessWidget {
                     style: TextStyle(
                       color: scheme.primary,
                       fontSize: 12,
-                      fontWeight: FontWeight.w600,
+                      fontWeight: FontWeight.w400,
                     ),
                   ),
                   if (book.description.isNotEmpty) ...[
@@ -186,17 +188,25 @@ class SourcedBookListTile extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         color: scheme.onSurfaceVariant,
-                        fontSize: 13,
+                        fontSize: 12,
                         height: 1.35,
                       ),
                     ),
                   ],
+                  if (book.latestChapter?.isNotEmpty ?? false)
+                    Text(
+                      book.latestChapter!,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: scheme.onSurfaceVariant,
+                        fontSize: 12,
+                      ),
+                    ),
                   if (footer != null) ...[const SizedBox(height: 4), footer!],
                 ],
               ),
             ),
-            const SizedBox(width: 6),
-            const Icon(Icons.chevron_right_rounded),
           ],
         ),
       ),
@@ -206,25 +216,31 @@ class SourcedBookListTile extends StatelessWidget {
 
 class _BookCoverThumb extends StatelessWidget {
   final BookSourceBook book;
+  final double width;
+  final double height;
 
-  const _BookCoverThumb({required this.book});
+  const _BookCoverThumb({
+    required this.book,
+    this.width = 54,
+    this.height = 76,
+  });
 
   @override
   Widget build(BuildContext context) {
     final fallback = SizedBox(
-      width: 58,
-      height: 78,
+      width: width,
+      height: height,
       child: GeneratedBookCover(title: book.title, author: book.author),
     );
     if (book.coverUrl == null) return fallback;
     return ClipRRect(
-      borderRadius: BorderRadius.circular(10),
+      borderRadius: BorderRadius.circular(5),
       child: SourceCoverImage(
         url: book.coverUrl!,
-        width: 58,
-        height: 78,
+        width: width,
+        height: height,
         fit: BoxFit.cover,
-        cacheWidth: (58 * MediaQuery.devicePixelRatioOf(context)).round(),
+        cacheWidth: (width * MediaQuery.devicePixelRatioOf(context)).round(),
         fallback: fallback,
       ),
     );
@@ -248,35 +264,53 @@ class SourcedBookActions {
   });
 
   void showBookDetails(SourcedBook result) {
-    final media = MediaQuery.of(context);
     unawaited(
-      showModalBottomSheet<void>(
-        context: context,
-        showDragHandle: true,
-        isScrollControlled: true,
-        useSafeArea: true,
-        constraints: BoxConstraints(
-          maxWidth: math.min(media.size.width, 640),
-          maxHeight: math.min(
-            media.size.height * 0.9,
-            media.size.height - media.padding.top - 16,
+      Navigator.of(context).push<void>(
+        MaterialPageRoute(
+          builder: (pageContext) => Scaffold(
+            key: const Key('bookSourceDetailsPage'),
+            appBar: AppBar(
+              backgroundColor: PageStyleHelper.palette(
+                pageContext,
+              ).backgroundStart,
+              surfaceTintColor: Colors.transparent,
+              elevation: 0,
+              scrolledUnderElevation: 0,
+              toolbarHeight: 56,
+              title: Text(
+                result.source.name,
+                style: const TextStyle(fontSize: 16),
+              ),
+            ),
+            body: Container(
+              decoration: BoxDecoration(
+                gradient: PageStyleHelper.backgroundGradient(pageContext),
+              ),
+              alignment: Alignment.topCenter,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 720),
+                child: _detailsLoader(result),
+              ),
+            ),
           ),
-        ),
-        builder: (sheetContext) => _SourcedBookDetailsLoader(
-          result: result,
-          client: client,
-          shelfService: shelfService,
-          onFindSources: onFindSources,
-          onRead: (book) =>
-              _openReader(SourcedBook(source: result.source, book: book)),
-          onDownloadContinuesInBackground: () {
-            if (!context.mounted) return;
-            showSideToast(context, context.l10n.downloadRunningInBackground);
-          },
         ),
       ),
     );
   }
+
+  Widget _detailsLoader(SourcedBook result) => _SourcedBookDetailsLoader(
+    result: result,
+    client: client,
+    shelfService: shelfService,
+    onFindSources: onFindSources,
+    onRead: (book) =>
+        _openReader(SourcedBook(source: result.source, book: book)),
+    onDownloadContinuesInBackground: () {
+      if (context.mounted) {
+        showSideToast(context, context.l10n.downloadRunningInBackground);
+      }
+    },
+  );
 
   Future<void> _openReader(SourcedBook result) async {
     if (!context.mounted) return;
@@ -496,24 +530,14 @@ class _SourcedBookDetailsSheetState extends State<_SourcedBookDetailsSheet> {
     return SafeArea(
       top: false,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 4, 20, 16),
+        padding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text(
-              _book.title,
-              style: Theme.of(
-                context,
-              ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              authorAndSource,
-              style: TextStyle(color: Theme.of(context).colorScheme.primary),
-            ),
-            const SizedBox(height: 14),
-            Flexible(
+            _buildBookHeader(context, authorAndSource),
+            const SizedBox(height: 20),
+            Expanded(
               child: AnimatedSize(
                 key: const Key('bookSourceSheetAnimatedSize'),
                 duration: reduceMotion
@@ -561,6 +585,52 @@ class _SourcedBookDetailsSheetState extends State<_SourcedBookDetailsSheet> {
     );
   }
 
+  Widget _buildBookHeader(BuildContext context, String authorAndSource) => Row(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      _BookCoverThumb(book: _book, width: 64, height: 90),
+      const SizedBox(width: 14),
+      Expanded(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              _book.title,
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                fontSize: 20,
+                height: 1.35,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              authorAndSource,
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.primary,
+                fontSize: 13,
+                height: 1.5,
+              ),
+            ),
+            if (_book.categories.isNotEmpty ||
+                (_book.status?.isNotEmpty ?? false))
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Text(
+                  [
+                    ..._book.categories,
+                    if (_book.status != null) _book.status!,
+                  ].join(' · '),
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ),
+          ],
+        ),
+      ),
+    ],
+  );
+
   Widget _buildStep(BuildContext context, bool reduceMotion) {
     return switch (_step) {
       _BookDetailsSheetStep.details => _buildDetails(context),
@@ -594,35 +664,31 @@ class _SourcedBookDetailsSheetState extends State<_SourcedBookDetailsSheet> {
   Widget _buildDetails(BuildContext context) {
     return Column(
       key: const Key('bookSourceDetailsContent'),
-      mainAxisSize: MainAxisSize.min,
+      mainAxisSize: MainAxisSize.max,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Flexible(
+        Expanded(
           child: SingleChildScrollView(
             key: const Key('bookSourceDetailsScroll'),
-            padding: const EdgeInsets.only(bottom: 4),
-            child: _book.description.isEmpty
-                ? const SizedBox.shrink()
-                : Text(_book.description, style: const TextStyle(height: 1.5)),
+            child: _buildDescription(context),
           ),
         ),
         const SizedBox(height: 14),
-        if (widget.onFindSources != null)
-          OutlinedButton.icon(
-            key: const Key('bookSourceFindOtherSources'),
-            onPressed: () {
-              Navigator.of(context).pop();
-              widget.onFindSources!();
-            },
-            icon: const Icon(Icons.manage_search),
-            label: const Text('查找其他书源'),
-          ),
         Row(
           children: [
             Expanded(
               child: SizedBox(
-                height: 52,
+                height: 42,
                 child: OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    textStyle: Theme.of(
+                      context,
+                    ).textTheme.bodySmall?.copyWith(fontSize: 13),
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                  ),
                   key: const Key('bookSourceAddToShelfButton'),
                   onPressed: () => setState(
                     () => _step = _BookDetailsSheetStep.shelfOptions,
@@ -635,8 +701,17 @@ class _SourcedBookDetailsSheetState extends State<_SourcedBookDetailsSheet> {
             const SizedBox(width: 12),
             Expanded(
               child: SizedBox(
-                height: 52,
+                height: 42,
                 child: FilledButton.icon(
+                  style: FilledButton.styleFrom(
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    textStyle: Theme.of(
+                      context,
+                    ).textTheme.bodySmall?.copyWith(fontSize: 13),
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                  ),
                   key: const Key('bookSourceReadButton'),
                   onPressed: _openReader,
                   icon: const Icon(Icons.menu_book_rounded),
@@ -649,6 +724,41 @@ class _SourcedBookDetailsSheetState extends State<_SourcedBookDetailsSheet> {
       ],
     );
   }
+
+  Widget _buildDescription(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      Text('简介', style: Theme.of(context).textTheme.titleMedium),
+      const SizedBox(height: 8),
+      Text(
+        _book.description.isEmpty ? '暂无简介' : _book.description,
+        style: const TextStyle(height: 1.6),
+      ),
+      const SizedBox(height: 24),
+      Text('站点', style: Theme.of(context).textTheme.titleMedium),
+      const SizedBox(height: 8),
+      Text('当前使用：${widget.result.source.name}'),
+      if (widget.onFindSources != null)
+        Align(
+          alignment: Alignment.centerLeft,
+          child: TextButton(
+            style: sourceTextActionStyle(context),
+            key: const Key('bookSourceFindOtherSources'),
+            onPressed: () {
+              Navigator.of(context).pop();
+              widget.onFindSources!();
+            },
+            child: const Text('查找其他书源'),
+          ),
+        ),
+      if (_book.latestChapter?.isNotEmpty ?? false) ...[
+        const SizedBox(height: 16),
+        Text('最新章节', style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: 8),
+        Text(_book.latestChapter!),
+      ],
+    ],
+  );
 
   Widget _buildShelfOptions(BuildContext context) {
     return Column(
@@ -728,6 +838,7 @@ class _SourcedBookDetailsSheetState extends State<_SourcedBookDetailsSheet> {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               TextButton(
+                style: sourceTextActionStyle(context),
                 onPressed: () =>
                     setState(() => _step = _BookDetailsSheetStep.shelfOptions),
                 child: Text(context.l10n.cancel),
@@ -793,6 +904,7 @@ class _SourcedBookDetailsSheetState extends State<_SourcedBookDetailsSheet> {
               children: [
                 Expanded(
                   child: TextButton(
+                    style: sourceTextActionStyle(context),
                     onPressed: () =>
                         _downloadController?.cancelTask(_downloadTaskId ?? ''),
                     child: Text(context.l10n.downloadTaskCancel),
@@ -814,6 +926,7 @@ class _SourcedBookDetailsSheetState extends State<_SourcedBookDetailsSheet> {
             )
           else if (state == DownloadTaskState.cancelled)
             TextButton(
+              style: sourceTextActionStyle(context),
               onPressed: () =>
                   setState(() => _step = _BookDetailsSheetStep.shelfOptions),
               child: Text(context.l10n.back),

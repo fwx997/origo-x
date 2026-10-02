@@ -22,7 +22,6 @@ import 'package:xxread/pages/library/library_page.dart';
 import 'package:xxread/pages/library/download_tasks_page.dart';
 import 'package:xxread/pages/settings/settings_page.dart';
 import 'package:xxread/services/core/app_settings_service.dart';
-import 'package:xxread/services/core/first_home_support_intro_service.dart';
 import 'package:xxread/services/library/download_task_controller.dart';
 import 'package:xxread/utils/book_open_transition.dart';
 import 'package:xxread/utils/glass_config.dart';
@@ -32,7 +31,6 @@ import 'package:xxread/utils/page_style_helper.dart';
 import 'package:xxread/utils/system_ui_helper.dart';
 import 'package:xxread/utils/ui_style.dart';
 import 'package:xxread/widgets/app_brand_icon.dart';
-import 'package:xxread/widgets/first_home_support_overlay.dart';
 
 import 'home_dashboard_page.dart';
 import 'home_mobile_chrome.dart';
@@ -86,9 +84,7 @@ class NavigationContext extends InheritedWidget {
 }
 
 class HomeShellPage extends StatefulWidget {
-  const HomeShellPage({super.key, this.showFirstHomeSupport = false});
-
-  final bool showFirstHomeSupport;
+  const HomeShellPage({super.key});
 
   @override
   State<HomeShellPage> createState() => _HomeShellPageState();
@@ -103,7 +99,6 @@ class _HomeShellPageState extends State<HomeShellPage> {
   late PageController _pageController;
   final HomeDashboardController _homeDashboardController =
       HomeDashboardController();
-  final SettingsPageController _settingsController = SettingsPageController();
   final AiPageController _aiPageController = AiPageController();
   AppLocalizations? _l10n;
   final LibraryPageController _libraryController = LibraryPageController();
@@ -115,8 +110,6 @@ class _HomeShellPageState extends State<HomeShellPage> {
   List<Widget> _mobilePages = const [];
   int? _pendingPageControllerIndex;
   bool _pageControllerSyncScheduled = false;
-  bool _supportIntroCheckStarted = false;
-  bool _showSupportIntro = false;
   final HomeMobileSystemInsetsStabilizer _mobileSystemInsets =
       HomeMobileSystemInsetsStabilizer();
 
@@ -129,30 +122,10 @@ class _HomeShellPageState extends State<HomeShellPage> {
       viewportFraction: 1.0, // 保持全屏显示
       keepPage: true, // 保持页面状态
     );
-    unawaited(_maybeShowFirstHomeSupport());
   }
 
   void _handleLibrarySelectionChanged() {
     if (mounted) setState(() {});
-  }
-
-  @override
-  void didUpdateWidget(covariant HomeShellPage oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (!oldWidget.showFirstHomeSupport && widget.showFirstHomeSupport) {
-      unawaited(_maybeShowFirstHomeSupport());
-    }
-  }
-
-  Future<void> _maybeShowFirstHomeSupport() async {
-    if (_supportIntroCheckStarted || !widget.showFirstHomeSupport) return;
-    _supportIntroCheckStarted = true;
-    final shouldShow = await const FirstHomeSupportIntroService()
-        .claimIfUnseen();
-    if (!shouldShow) return;
-    await Future<void>.delayed(const Duration(milliseconds: 420));
-    if (!mounted) return;
-    setState(() => _showSupportIntro = true);
   }
 
   /// 组装导航项列表（可看作“首页路由表”）。
@@ -207,7 +180,7 @@ class _HomeShellPageState extends State<HomeShellPage> {
         icon: Icons.settings_outlined,
         selectedIcon: Icons.settings,
         label: l10n.settings,
-        page: SettingsPage(controller: _settingsController),
+        page: const SettingsPage(),
       ),
     };
     final items = navigationOrder
@@ -343,37 +316,8 @@ class _HomeShellPageState extends State<HomeShellPage> {
     _libraryController.selection.removeListener(_handleLibrarySelectionChanged);
     _pageController.dispose();
     _homeDashboardController.dispose();
-    _settingsController.dispose();
     _libraryController.dispose();
     super.dispose();
-  }
-
-  void _dismissFirstHomeSupport() {
-    if (!mounted) return;
-    setState(() => _showSupportIntro = false);
-  }
-
-  Future<void> _openSupportSettings() async {
-    _dismissFirstHomeSupport();
-    final settingsIndex = _navigationItems.indexWhere(
-      (item) => item.page is SettingsPage,
-    );
-    if (settingsIndex < 0) return;
-
-    if (LayoutHelper.getNavigationType(context) == NavigationType.rail) {
-      _updateSelectedIndex(settingsIndex);
-      await _waitForNextFrame();
-    } else {
-      await _switchToTab(settingsIndex);
-    }
-    if (!mounted) return;
-    _settingsController.revealSupportSection();
-  }
-
-  Future<void> _waitForNextFrame() {
-    final completer = Completer<void>();
-    WidgetsBinding.instance.addPostFrameCallback((_) => completer.complete());
-    return completer.future;
   }
 
   @override
@@ -421,22 +365,7 @@ class _HomeShellPageState extends State<HomeShellPage> {
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: overlayStyle,
-      child: Stack(
-        children: [
-          Positioned.fill(child: content),
-          if (_showSupportIntro)
-            Positioned.fill(
-              child: FirstHomeSupportOverlay(
-                supportLabel: context.l10n.firstHomeSupportNow,
-                laterLabel: context.l10n.firstHomeSupportLater,
-                paperSemanticLabel:
-                    context.l10n.firstHomeSupportPaperSemanticLabel,
-                onSupport: () => unawaited(_openSupportSettings()),
-                onLater: _dismissFirstHomeSupport,
-              ),
-            ),
-        ],
-      ),
+      child: content,
     );
   }
 }

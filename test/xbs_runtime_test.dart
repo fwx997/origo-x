@@ -22,6 +22,7 @@ Map<String, dynamic> fixture() => {
     'bookName': '//a',
     'detailUrl': '//a/@href',
     'author': '//span',
+    'cover': '//img/@src',
   },
   'bookDetail': {
     'bookName': '//h1',
@@ -89,10 +90,15 @@ void main() {
       expect(transport.requests.first.url.queryParameters['q'], '剑 来');
       expect(search.items.single.title, 'Example Book');
       expect(search.items.single.author, 'Author');
+      expect(
+        search.items.single.coverUrl,
+        Uri.parse('https://books.test/covers/1.jpg'),
+      );
       expect(search.hasMore, isTrue);
       final book = await runtime.getBook(source, search.items.single.id);
       expect(book.id, 'https://books.test/book/1');
       expect(book.author, 'Author');
+      expect(book.coverUrl, search.items.single.coverUrl);
       final chapters = await runtime.getChapters(source, book.id);
       expect(chapters.map((c) => c.title), ['Chapter One', 'Chapter Two']);
       final content = await runtime.getChapterContent(
@@ -107,6 +113,48 @@ void main() {
       final browse = await runtime.browse(source, category: categories.last.id);
       expect(transport.requests.last.url.queryParameters['kind'], 'hot');
       expect(browse.items.single.title, 'Example Book');
+    },
+  );
+
+  test('optional covers ignore invalid schemes and malformed URLs', () async {
+    for (final cover in [
+      'data:image/png;base64,AAAA',
+      'https://[broken',
+      '   ',
+    ]) {
+      final config = fixture();
+      (config['searchBook'] as Map)['cover'] = "'$cover'";
+      final runtime = XbsRuntime(
+        transport: _FixtureTransport(),
+        javascript: _NoJavascript.new,
+      );
+      addTearDown(runtime.close);
+      final page = await runtime.search(
+        XbsSource('invalid-cover', config).toRegisteredSource(),
+        'Book',
+      );
+      expect(page.items.single.title, 'Example Book');
+      expect(page.items.single.coverUrl, isNull);
+    }
+  });
+
+  test(
+    'cover selection takes the first value while text fields keep all matches',
+    () async {
+      final engine = XbsRuleEngine(_NoJavascript(), {}, {});
+      const html = '<img src=" "><img src="/cover.jpg"><img src="/avatar.png">';
+      expect(await engine.text(html, '//img/@src', first: true), '/cover.jpg');
+      expect(await engine.text(html, '//img/@src'), ' /cover.jpg/avatar.png');
+      expect(
+        await engine.text(
+          {
+            'covers': ['', '/cover.jpg', '/avatar.png'],
+          },
+          'covers',
+          first: true,
+        ),
+        '/cover.jpg',
+      );
     },
   );
 
@@ -171,7 +219,8 @@ class _FixtureTransport implements LegadoTransport {
     requests.add(request);
     final body = switch (request.url.path) {
       '/search' || '/rank' =>
-        '<ul><li><a href="/book/1">Example Book</a><span>Author</span></li></ul>',
+        '<ul><li><a href="/book/1">Example Book</a><span>Author</span>'
+            '<img src=" /covers/1.jpg "><img src="//cdn.books.test/avatar.png"></li></ul>',
       '/book/1' =>
         '<h1>Example Book</h1><p>Description</p><a href="/catalog/1">Catalog</a>',
       '/catalog/1' =>

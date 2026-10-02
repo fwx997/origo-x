@@ -1,7 +1,8 @@
 import 'dart:convert';
 
 import 'package:html/parser.dart' as html;
-import 'package:gbk_codec/gbk_codec.dart';
+
+import '../../utils/fast_gbk_decoder.dart';
 
 import '../legado/legado_request.dart';
 import '../models/registered_book_source.dart';
@@ -164,7 +165,7 @@ class XbsRuntime {
   String _encodeParameter(String value, String charset) {
     final bytes = charset == 'utf-8'
         ? utf8.encode(value)
-        : gbk_bytes.encode(value);
+        : encodeGbkFast(value);
     return bytes.map((b) {
       if (b == 32) return '+';
       if (b >= 65 && b <= 90 ||
@@ -257,7 +258,7 @@ class XbsRuntime {
     String title, {
     BookSourceBook? fallback,
   }) async {
-    final cover = await page.field(item, 'cover');
+    final cover = await page.field(item, 'cover', first: true);
     final author = await page.field(item, 'author');
     final description = await page.field(item, 'desc');
     final latest = await page.field(item, 'lastChapterTitle');
@@ -268,12 +269,24 @@ class XbsRuntime {
       description: description.isEmpty
           ? fallback?.description ?? ''
           : description,
-      coverUrl: cover.isEmpty ? fallback?.coverUrl : page.uri.resolve(cover),
+      coverUrl: _coverUri(cover, page.uri) ?? fallback?.coverUrl,
       latestChapter: latest.isEmpty ? fallback?.latestChapter : latest,
       categories: [
         await page.field(item, 'cat'),
       ].where((s) => s.isNotEmpty).toList(),
     );
+  }
+
+  Uri? _coverUri(String value, Uri base) {
+    if (value.trim().isEmpty) return null;
+    try {
+      final uri = base.resolve(value.trim());
+      return uri.host.isNotEmpty && ['http', 'https'].contains(uri.scheme)
+          ? uri
+          : null;
+    } on FormatException {
+      return null;
+    }
   }
 
   String _identity(String value, Uri base) =>
@@ -514,9 +527,25 @@ class _XbsPage {
     Object? item,
     String name, {
     bool content = false,
+    bool first = false,
   }) async {
-    if (scripted && item is Map) return '${item[name] ?? ''}';
-    return engine.text(item, engine.config[name], content: content);
+    if (scripted && item is Map) {
+      final value = item[name];
+      if (first && value is List) {
+        return value
+                .where((entry) => entry != null && '$entry'.trim().isNotEmpty)
+                .firstOrNull
+                ?.toString() ??
+            '';
+      }
+      return '${value ?? ''}';
+    }
+    return engine.text(
+      item,
+      engine.config[name],
+      content: content,
+      first: first,
+    );
   }
 
   Future<String> nextUrl() async {

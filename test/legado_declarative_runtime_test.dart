@@ -3,7 +3,6 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:gbk_codec/gbk_codec.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:xxread/book_sources/legado/legado_book_source.dart';
 import 'package:xxread/book_sources/legado/legado_request.dart';
@@ -379,7 +378,7 @@ void main() {
           'plain',
           charset: 'gbk',
         );
-        request.response.add(gbk_bytes.encode('结果'));
+        request.response.add([0xbd, 0xe1, 0xb9, 0xfb]);
         await request.response.close();
       });
       final transport = LegadoHttpTransport(
@@ -395,7 +394,19 @@ void main() {
       );
 
       expect(response.body, '结果');
-      expect(await received.future, gbk_bytes.encode('关键词=剑来'));
+      expect(await received.future, [
+        0xb9,
+        0xd8,
+        0xbc,
+        0xfc,
+        0xb4,
+        0xca,
+        0x3d,
+        0xbd,
+        0xa3,
+        0xc0,
+        0xb4,
+      ]);
     });
 
     test(
@@ -429,6 +440,47 @@ void main() {
         expect(response.body, hasLength(2));
       },
     );
+
+    for (final declaration in [
+      '<meta charset="gbk">',
+      '<meta http-equiv="Content-Type" content="text/html; charset=gb18030"/>',
+    ]) {
+      test('reads Chinese HTML encoding from $declaration', () async {
+        server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+        final body = '<html><head>$declaration</head><body>书名与作者</body></html>';
+        server.listen((request) async {
+          request.response.headers.set('content-type', 'text/html');
+          request.response.add([
+            ...ascii.encode('<html><head>$declaration</head><body>'),
+            0xca,
+            0xe9,
+            0xc3,
+            0xfb,
+            0xd3,
+            0xeb,
+            0xd7,
+            0xf7,
+            0xd5,
+            0xdf,
+            ...ascii.encode('</body></html>'),
+          ]);
+          await request.response.close();
+        });
+        final transport = LegadoHttpTransport(
+          networkPolicy: const BookSourceNetworkPolicy(
+            allowPrivateNetwork: true,
+          ),
+        );
+        addTearDown(transport.close);
+        final response = await transport.send(
+          LegadoRequestTemplate.parse(
+            'http://${server.address.address}:${server.port}/',
+            baseUri: Uri.parse('https://unused.test'),
+          ),
+        );
+        expect(response.body, body);
+      });
+    }
 
     test('rejects responses over the configured bound', () async {
       server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
