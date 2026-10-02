@@ -37,6 +37,7 @@ import 'package:xxread/utils/page_style_helper.dart';
 import 'package:xxread/utils/reader_themes.dart';
 import 'package:xxread/utils/system_ui_helper.dart';
 import 'package:xxread/utils/ui_style.dart';
+import 'package:xxread/utils/xbs_build_identity.dart';
 import 'package:xxread/widgets/app_brand_icon.dart';
 import 'package:xxread/widgets/accent_color_picker_sheet.dart';
 import 'package:xxread/widgets/contributors_view.dart';
@@ -1851,6 +1852,8 @@ class _SettingsPageState extends State<SettingsPage> {
           const Divider(height: 1),
           const SizedBox(height: 14),
           _buildAboutLine(l10n.settingsVersionLabel, _appVersion),
+          if (xbsBuildLabel.isNotEmpty)
+            _buildAboutLine('XBS 构建', xbsBuildLabel),
           _buildAboutLine(l10n.settingsLicenseLabel, 'AGPL-3.0'),
           const SizedBox(height: 8),
           _buildOpenSourceLicensesLink(),

@@ -24,14 +24,19 @@ jobs:
           channel: stable
           cache: true
       - name: Resolve locked dependencies
-        run: flutter pub get --enforce-lockfile
+        run: |
+          flutter clean
+          flutter pub get --enforce-lockfile
+          version=$(python3 -c "import re; print(re.search(r'^version: (.+)$', open('pubspec.yaml').read(), re.M).group(1))")
+          echo "XBS_BUILD_LABEL=$version" >> "$GITHUB_ENV"
+          echo "XBS_IPA_NAME=Origo-X-XBS-${version//+/-}-unsigned.ipa" >> "$GITHUB_ENV"
       - name: Check source integration
         run: |
           flutter analyze --no-fatal-infos --no-fatal-warnings
-          flutter test --concurrency=2 --reporter expanded
+          flutter test --concurrency=2 --reporter expanded --dart-define=XBS_BUILD_LABEL="$XBS_BUILD_LABEL"
           flutter test packages/xpath_selector_html_parser/test/html_test.dart
       - name: Build unsigned iOS app
-        run: flutter build ios --release --no-codesign
+        run: flutter build ios --release --no-codesign --dart-define=XBS_BUILD_LABEL="$XBS_BUILD_LABEL"
       - name: Verify iOS payload
         run: |
           app=build/ios/iphoneos/Runner.app
@@ -49,9 +54,10 @@ jobs:
           cp docs/XBS_IOS_PREVIEW.zh-CN.md build/xbs-preview/README.zh-CN.md
           printf '%s\n' '${{ github.sha }}' > build/xbs-preview/SOURCE_COMMIT.txt
           cd build/xbs-preview
-          zip -q -r Origo-X-XBS-unsigned.ipa Payload
-          unzip -tq Origo-X-XBS-unsigned.ipa
-          shasum -a 256 Origo-X-XBS-unsigned.ipa > SHA256SUMS.txt
+          zip -q -r "$XBS_IPA_NAME" Payload
+          unzip -tq "$XBS_IPA_NAME"
+          shasum -a 256 "$XBS_IPA_NAME" > SHA256SUMS.txt
+          python3 ../../tool/verify_xbs_ipa.py "$XBS_IPA_NAME" "$XBS_BUILD_LABEL" > PAYLOAD_VERIFICATION.json
       - name: Upload preview
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
@@ -61,6 +67,7 @@ jobs:
             build/xbs-preview/SHA256SUMS.txt
             build/xbs-preview/README.zh-CN.md
             build/xbs-preview/SOURCE_COMMIT.txt
+            build/xbs-preview/PAYLOAD_VERIFICATION.json
           if-no-files-found: error
           retention-days: 14
       - name: Publish preview release
@@ -72,7 +79,8 @@ jobs:
             --target '${{ github.sha }}' --prerelease \
             --title 'Origo X XBS iOS preview #${{ github.run_number }}' \
             --notes-file docs/XBS_IOS_PREVIEW.zh-CN.md \
-            build/xbs-preview/Origo-X-XBS-unsigned.ipa \
+            build/xbs-preview/*.ipa \
             build/xbs-preview/SHA256SUMS.txt \
             build/xbs-preview/README.zh-CN.md \
-            build/xbs-preview/SOURCE_COMMIT.txt
+            build/xbs-preview/SOURCE_COMMIT.txt \
+            build/xbs-preview/PAYLOAD_VERIFICATION.json

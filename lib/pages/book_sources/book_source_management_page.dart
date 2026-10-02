@@ -18,6 +18,7 @@ import 'package:xxread/services/core/app_settings_service.dart';
 import 'package:xxread/utils/layout_helper.dart';
 import 'package:xxread/utils/localization_extension.dart';
 import 'package:xxread/utils/page_style_helper.dart';
+import 'package:xxread/utils/xbs_build_identity.dart';
 import 'package:xxread/widgets/side_toast.dart';
 import 'package:xxread/widgets/source_cover_image.dart';
 
@@ -1276,6 +1277,10 @@ class _AddBookSourcePanel extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 16),
+            if (xbsBuildLabel.isNotEmpty) ...[
+              Text('XBS $xbsBuildLabel', style: theme.textTheme.bodySmall),
+              const SizedBox(height: 12),
+            ],
             SegmentedButton<_AddSourceMode>(
               key: const Key('bookSourceAddMode'),
               segments: [
