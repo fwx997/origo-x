@@ -8,7 +8,17 @@
 
 原包核对依据、当前用户目标的逐项验收与边界见 [行为依据与验收](XIANGSE_BEHAVIOR_REFERENCE.zh-CN.md)。本轮取得的是原包资源和规则，没有完整原生源码。
 
-## iOS 体验版交付（2026-10-02）
+## 最新 iOS 体验版交付（2026-10-02）
+
+- 版本 `2.4.5+261002002`，源码提交 `4a23bb5169008300410ba3006fba095dca4f9da7`。
+- [下载最新 IPA](https://github.com/fwx997/origo-x/releases/tag/xbs-preview-5-1)；[Actions #5](https://github.com/fwx997/origo-x/actions/runs/36965861127) 已成功。
+- 已完成香色式搜索/分类/详情/站点选择布局，统一顶部主题底色；普通深浅色字号一致。修复封面多图拼接、HTML 编码识别与 XPath 条件兼容，移除打赏和首次支持引导。
+- GBK 映射压缩存储，21,789 个映射与原依赖逐项一致；书源请求、正文与 EPUB 共用稳定编码/解码。
+- macOS 746 项测试及 XPath 检查通过；7 项原生脚本测试在 Windows 通过。IPA 21,107,510 字节，版本、Bundle ID、Runner/App/Flutter/FJS ARM64、ZIP、SHA-256 均已核验。
+- SHA-256：`33b01ed56d846a8c9a819f583cad748fd980d9bcca00ba5434492d9d7d9f8353`。
+- 本地交付：`../origo-x-delivery/xbs-preview-5-1/`，包含 IPA、校验文件、源码提交与 `verification.json`。未进行 iPhone / LiveContainer 安装验证。
+
+## 首次 iOS 体验版交付（2026-10-02）
 
 - 源码已推送到 [fwx997/origo-x](https://github.com/fwx997/origo-x)，默认分支为 `feat/xiangse-xbs`。
 - [下载 IPA 与校验文件](https://github.com/fwx997/origo-x/releases/tag/xbs-preview-3-1)；构建源码提交为 `11f4784de2b7bcb00b86e7d7a8f1ff56469a925f`。
