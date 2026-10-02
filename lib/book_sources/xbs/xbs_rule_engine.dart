@@ -6,6 +6,7 @@ import 'package:xpath_selector_html_parser/xpath_selector_html_parser.dart';
 
 import '../protocol/book_source_protocol.dart';
 import 'xbs_javascript.dart';
+import 'xbs_json_path.dart';
 
 class XbsRuleEngine {
   XbsRuleEngine(this.javascript, this.config, this.params);
@@ -42,6 +43,19 @@ class XbsRuleEngine {
         params,
         _serializable(selected),
       );
+    }
+    final replacements = rule.split(RegExp(r'\|{1,2}\s*@replace:'));
+    if (replacements.length > 1) {
+      var value = await text(
+        input,
+        replacements.first,
+        content: content,
+        first: first,
+      );
+      for (final replacement in replacements.skip(1)) {
+        value = value.replaceAll(replacement.trim(), '');
+      }
+      return value;
     }
     for (final alternative in rule.split('||')) {
       final value = _select(input, alternative.trim(), nodes, content, first);
@@ -85,7 +99,7 @@ class XbsRuleEngine {
       return rule.substring(1, rule.length - 1);
     }
     if (input is Map || input is List) {
-      final value = _json(input, rule, nodes);
+      final value = XbsJsonPath.select(input, rule, nodes: nodes);
       if (first && !nodes && value is List) {
         return value
                 .where((entry) => entry != null && '$entry'.trim().isNotEmpty)
@@ -94,13 +108,22 @@ class XbsRuleEngine {
       }
       return value;
     }
-    final node = input is Node ? input : html.parse('$input').documentElement!;
+    final node = input is Element && rule.startsWith('//')
+        ? (DocumentFragment()..nodes.add(input.clone(true)))
+        : input is Node
+        ? input
+        : html.parse('$input').documentElement!;
     if (!rule.startsWith('/') && !rule.startsWith('.')) {
       throw const BookSourceProtocolException('XBS：不支持此选择器语法');
     }
-    final query = HtmlXPath.node(node).query(rule);
+    // Legacy XBS rules sometimes omit quotes in wildcard attribute values.
+    final xpath = rule.replaceAllMapped(
+      RegExp(r'\[@\*\s*(=|!=)\s*([A-Za-z_][\w-]*)\s*\]'),
+      (match) => '[@*${match[1]}"${match[2]}"]',
+    );
+    final query = HtmlXPath.node(node).query(xpath);
     if (nodes) return query.nodes.map((e) => e.node).toList();
-    if (content && !rule.contains('/@') && !rule.endsWith('text()')) {
+    if (content && !rule.contains('/@') && !rule.contains('/text()')) {
       return query.nodes
           .map((e) => e.node)
           .whereType<Element>()
@@ -116,29 +139,6 @@ class XbsRuleEngine {
           '';
     }
     return strings.join(content ? '\n' : '');
-  }
-
-  Object? _json(Object? input, String rule, bool nodes) {
-    var values = <Object?>[input];
-    final path = rule
-        .replaceFirst(RegExp(r'^\$[./]?'), '')
-        .replaceAllMapped(RegExp(r'\[(\d+|\*)\]'), (m) => '/${m[1]}');
-    for (final part in path.split(RegExp(r'[/.]')).where((e) => e.isNotEmpty)) {
-      values = values.expand((value) => _jsonStep(value, part)).toList();
-    }
-    if (nodes) return values.expand((e) => e is List ? e : [e]).toList();
-    return values.length == 1 ? values.first : values;
-  }
-
-  Iterable<Object?> _jsonStep(Object? value, String part) {
-    if (value is Map) return value.containsKey(part) ? [value[part]] : [];
-    if (value is! List) return [];
-    if (part == '*') return value;
-    final index = int.tryParse(part);
-    if (index != null) {
-      return index >= 0 && index < value.length ? [value[index]] : [];
-    }
-    return value.expand((item) => _jsonStep(item, part));
   }
 
   Object? _serializable(Object? value) {

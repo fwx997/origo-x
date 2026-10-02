@@ -9,10 +9,15 @@ final predicateChild = RegExp(
 final predicateSym = RegExp(r'\+|\-|\*|\/|\smod\s|\sdiv\s|%');
 
 final simplePosition = RegExp(
-  r'position\(\s*\)\s*(?<op><|<=|>|>=)\s*(?<num>\d+)',
+  r'position\(\s*\)\s*(?<op><=|>=|!=|=|<|>)\s*(?<num>last\(\s*\)|\d+)',
 );
-final simpleLast = RegExp(r'last\(\s*\)\s*(?<op>\+|\-|\*|\/%\^)\s*(?<num>\d+)');
-final simpleSingleLast = RegExp(r'last\(\s*\)');
+final simpleLast = RegExp(
+  r'^last\(\s*\)\s*(?<op>\+|\-|\*|\/%\^)\s*(?<num>\d+)$',
+);
+final simpleSingleLast = RegExp(r'^last\(\s*\)$');
+final predicateCount = RegExp(
+  r'count\(\s*(?<child>[\w*-]+)\s*\)\s*(?<op><=|>=|!=|=|<|>)\s*(?<num>\d+)',
+);
 
 final predicateEqual = RegExp(
   r'''(?<not>(?:not)?)\s*\(?\s*(?<function>@\*|\.|@?[\w-]+\(?\s*\)?)\s*(?<op>=|~=|\|=|\^=|\$=|\*=|!=)\s*['"](?<value>.*?)['"]\)?''',

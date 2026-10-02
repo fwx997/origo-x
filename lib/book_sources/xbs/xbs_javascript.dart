@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:fjs/fjs.dart';
+import 'package:flutter/services.dart';
 
 import '../protocol/book_source_protocol.dart';
 import '../services/source_task_pool.dart';
@@ -17,7 +18,11 @@ abstract interface class XbsJavascript {
 }
 
 class XbsQuickJs implements XbsJavascript {
+  XbsQuickJs({Map<String, Object?>? cache}) : _cache = cache ?? {};
+
   static Future<void>? _initialization;
+  static Future<String>? _helpers;
+  final Map<String, Object?> _cache;
   JsEngine? _engine;
 
   Future<JsEngine> _getEngine() async {
@@ -62,6 +67,17 @@ class XbsQuickJs implements XbsJavascript {
       ),
     );
     await engine.initWithoutBridge();
+    try {
+      final helpers = await (_helpers ??= rootBundle.loadString(
+        'assets/xbs/native_helpers.js',
+      ));
+      await engine
+          .eval(source: JsCode.code(helpers))
+          .timeout(const Duration(seconds: 2));
+    } catch (_) {
+      await engine.close();
+      rethrow;
+    }
     _engine = engine;
     return engine;
   }
@@ -93,8 +109,19 @@ class XbsQuickJs implements XbsJavascript {
     void cancelScript() => unawaited(close());
     cancellation?.addListener(cancelScript);
     // Data is encoded as JSON, never interpolated into quoted JavaScript strings.
-    final arguments = [config, params, result].map(jsonEncode).join(',');
-    final wrapped = '(function(config,params,result){$code\n})($arguments)';
+    final arguments = [
+      config,
+      params,
+      result,
+      _cache,
+    ].map(jsonEncode).join(',');
+    final wrapped =
+        '(function(config,params,result,cache){'
+        'const changes=[];'
+        'params.nativeTool=globalThis.__xbsCreateNativeTool(cache,changes);'
+        'const value=(function(){ $code\n })();'
+        'return JSON.stringify({value:value===undefined?null:value,changes});'
+        '})($arguments)';
     try {
       final value = await engine
           .eval(
@@ -103,7 +130,15 @@ class XbsQuickJs implements XbsJavascript {
           )
           .timeout(const Duration(seconds: 2));
       cancellation?.throwIfCancelled();
-      return value.value;
+      final envelope = jsonDecode(value.value as String) as Map;
+      for (final change in envelope['changes'] as List) {
+        _cache.remove(change[0]);
+        _cache[change[0] as String] = change[1];
+      }
+      while (_cache.length > 128 || jsonEncode(_cache).length > 256 * 1024) {
+        _cache.remove(_cache.keys.first);
+      }
+      return envelope['value'];
     } on TimeoutException {
       await close(); // FJS close interrupts the native runtime, including loops.
       throw const BookSourceProtocolException('香色脚本执行超时');

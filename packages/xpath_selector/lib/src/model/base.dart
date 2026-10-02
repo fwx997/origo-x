@@ -19,8 +19,8 @@ class NodeTagName {
 
   String? get qualified => localName != null
       ? namespace != null
-          ? '$namespace:$localName'
-          : localName
+            ? '$namespace:$localName'
+            : localName
       : null;
 
   @override
@@ -52,6 +52,9 @@ abstract class XPathNode<T> {
 
   /// Return the direct children of this node in document order.
   List<XPathNode<T>> get children;
+
+  /// Direct text nodes, for positional text() selections.
+  List<XPathNode<T>> get textChildren => const [];
 
   /// Return the attribute nodes of this node in document order.
   Map<String, String> get attributes;

@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:xxread/book_sources/protocol/book_source_protocol.dart';
 import 'package:xxread/book_sources/services/book_download_cancellation.dart';
@@ -12,7 +14,153 @@ import 'package:xxread/book_sources/legado/legado_request.dart';
 /// Opt in with --dart-define=XBS_NATIVE_TEST=true and the FJS native library
 /// built/available to the test process. No mock engine is used in this suite.
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
   group('native XBS JavaScript', () {
+    test(
+      'compound JSON chapter identifiers reach the next request unchanged',
+      () async {
+        final transport = _ScriptTransport();
+        final runtime = XbsRuntime(transport: transport);
+        addTearDown(runtime.close);
+        final source = XbsSource('compound', {
+          'sourceUrl': 'https://books.test/',
+          'chapterList': {
+            'JSParser':
+                'function functionName(config,params,result){return {list:[{title:"Chapter",url:JSON.stringify({book:"42",chapter:"7"})}]};}',
+          },
+          'chapterContent': {
+            'requestInfo':
+                '@js:const id=JSON.parse(result);return {url:config.host+"read/"+id.book+"/"+id.chapter};',
+            'JSParser':
+                'function functionName(config,params,result){return {content:"chapter text"};}',
+          },
+        }).toRegisteredSource();
+        final chapters = await runtime.getChapters(source, '42');
+        expect(jsonDecode(chapters.single.id), {'book': '42', 'chapter': '7'});
+        await runtime.getChapterContent(
+          source,
+          bookId: '42',
+          chapterId: chapters.single.id,
+        );
+        expect(
+          transport.request.url.toString(),
+          'https://books.test/read/42/7',
+        );
+      },
+    );
+    test(
+      'request overrides pass decoded JSON and retain source-scoped cache',
+      () async {
+        final transport = _ScriptTransport();
+        final runtime = XbsRuntime(transport: transport);
+        addTearDown(runtime.close);
+        final config = <String, dynamic>{
+          'sourceUrl': 'https://books.test/',
+          'searchBook': {
+            'requestInfo':
+                '@js:if(params.pageIndex===1)params.nativeTool.setCache("page",7);'
+                'return {url:config.host+"search",responseFormatType:"json",'
+                'requestParamsEncode:"2147485232",responseEncode:"2147485232",'
+                'httpParams:{page:params.nativeTool.getCache("page") || 0}};',
+            'JSParser':
+                'function functionName(config,params,result) {'
+                'return result.items.map(b=>({bookName:b.name,detailUrl:b.id}));}',
+          },
+        };
+        final first = XbsSource('first', config).toRegisteredSource();
+        final other = XbsSource('other', {
+          ...config,
+          'sourceUrl': 'https://other.test/',
+        }).toRegisteredSource();
+        expect((await runtime.search(first, '书')).items.single.title, 'Book');
+        expect(transport.request.responseCharset, 'gbk');
+        expect(transport.request.charset, 'gbk');
+        await runtime.search(first, '书', page: 2);
+        expect(transport.request.url.queryParameters['page'], '7');
+        await runtime.search(other, '书', page: 2);
+        expect(transport.request.url.queryParameters['page'], '0');
+      },
+    );
+    test(
+      'native helpers parse malformed HTML, hash and decode Unicode',
+      () async {
+        final js = XbsQuickJs();
+        addTearDown(js.close);
+        final value =
+            await js.evaluate(
+                  '''
+        console.log('ignored');
+        const tool = params.nativeTool;
+        tool.logWithKey('ignored', 'key');
+        const doc = tool.XPathParserWithSource('<ul><li><a href="/1">一</a><li><a href="/2">二</a></ul>');
+        const rows = doc.queryWithXPath('//li');
+        return {
+          links: rows.map(row => row.queryWithXPath('//a/@href')[0].content()),
+          root: rows[0].queryWithXPath('//li')[0].content(),
+          hash: tool.md5Encode('abc'),
+          text: tool.base64Decode(tool.base64Encode('中文😀')),
+          html: rows[0].raw(),
+          noIo: typeof tool.readTxtFile
+        };
+      ''',
+                  {},
+                  {},
+                  null,
+                )
+                as Map;
+        expect(value['links'], ['/1', '/2']);
+        expect(value['root'], '一');
+        expect(value['hash'], '900150983cd24fb0d6963f7d28e17f72');
+        expect(value['text'], '中文😀');
+        expect(value['html'], contains('<a href="/1">一</a>'));
+        expect(value['noIo'], 'undefined');
+      },
+    );
+
+    test(
+      'script cache survives actions and isolates source instances',
+      () async {
+        final cache = <String, Object?>{};
+        final first = XbsQuickJs(cache: cache);
+        await first.evaluate(
+          'params.nativeTool.setCache("tag", {page:2}); return null;',
+          {},
+          {},
+          null,
+        );
+        await first.close();
+        final next = XbsQuickJs(cache: cache);
+        final other = XbsQuickJs();
+        addTearDown(next.close);
+        addTearDown(other.close);
+        expect(
+          await next.evaluate(
+            'return params.nativeTool.getCache("tag");',
+            {},
+            {},
+            null,
+          ),
+          {'page': 2},
+        );
+        expect(
+          await other.evaluate(
+            'return params.nativeTool.getCache("tag");',
+            {},
+            {},
+            null,
+          ),
+          isNull,
+        );
+        await next.evaluate(
+          'for(let i=0;i<150;i++)params.nativeTool.setCache("k"+i,i);',
+          {},
+          {},
+          null,
+        );
+        expect(cache.length, 128);
+      },
+    );
+
     test('cover postprocessing receives one image URL', () async {
       final js = XbsQuickJs();
       addTearDown(js.close);

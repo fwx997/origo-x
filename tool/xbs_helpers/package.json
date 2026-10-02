@@ -1,0 +1,14 @@
+{
+  "name": "origo-xbs-helpers",
+  "private": true,
+  "type": "module",
+  "scripts": {"build": "node build.mjs"},
+  "dependencies": {
+    "@xmldom/xmldom": "0.9.12",
+    "blueimp-md5": "2.19.0",
+    "js-base64": "3.9.4",
+    "parse5": "8.0.1",
+    "xpath": "0.0.34"
+  },
+  "devDependencies": {"esbuild": "0.28.2"}
+}

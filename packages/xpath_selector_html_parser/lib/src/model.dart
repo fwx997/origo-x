@@ -21,6 +21,10 @@ class HtmlNodeTree extends XPathNode<Node> {
       node.children.map((e) => HtmlNodeTree(e)).toList();
 
   @override
+  List<HtmlNodeTree> get textChildren =>
+      node.nodes.whereType<Text>().map(HtmlNodeTree.new).toList();
+
+  @override
   HtmlNodeTree? get nextSibling =>
       isElement ? from(element.nextElementSibling) : null;
 

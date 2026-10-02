@@ -84,6 +84,7 @@ List<XPathNode<T>> _matchSelectPath<T>(Selector selector, XPathNode<T> node) {
 
 /// Get element by Axis
 List<XPathNode<T>> _matchAxis<T>(Selector selector, XPathNode<T> node) {
+  if (selector.axes.nodeTest == '#text') return node.textChildren.toList();
   final waitingSelect = <XPathNode<T>>[];
   switch (selector.axes.axis) {
     case AxesAxis.child:
@@ -134,6 +135,7 @@ bool _matchSelector({
 
   // node-test
   final nodeTest = selector.axes.nodeTest;
+  if (nodeTest == '#text') return true;
 
   if (nodeTest != 'node()') {
     if (!element.isElement) return false;
@@ -150,7 +152,7 @@ bool _matchPredicates({
   required int length,
   required String predicate,
 }) {
-  predicate = predicate.replaceAll(' and ', ' && ');
+  predicate = predicate.trim().replaceAll(' and ', ' && ');
   predicate = predicate.replaceAll(' or ', ' || ');
   predicate = predicate.replaceAll(' div ', ' / ');
   predicate = predicate.replaceAll(' mod ', ' % ');
@@ -164,7 +166,9 @@ bool _matchPredicates({
     );
   } else {
     // Position
-    if (predicateLast.hasMatch(predicate) || predicateInt.hasMatch(predicate)) {
+    if (simpleLast.hasMatch(predicate) ||
+        simpleSingleLast.hasMatch(predicate) ||
+        predicateInt.hasMatch(predicate)) {
       return _singlePosition(
         predicate: predicate,
         position: position,
@@ -222,7 +226,7 @@ bool _multipleCompare({
   // [position() < 3]
   final positionReg = simplePosition.allMatches(predicate);
   for (final reg in positionReg) {
-    final result = _positionMatch(position, reg)!;
+    final result = _positionMatch(position, length, reg)!;
     expression = expression.replaceAll(reg[0]!, result ? 'true' : 'false');
   }
 
@@ -234,6 +238,10 @@ bool _multipleCompare({
   }
 
   // [child>1]
+  for (final reg in predicateCount.allMatches(predicate)) {
+    final result = _countMatch(element, reg)!;
+    expression = expression.replaceAll(reg[0]!, result ? 'true' : 'false');
+  }
   final childReg = predicateChild.allMatches(predicate);
   for (final reg in childReg) {
     final result = _childMatch(element, reg)!;
@@ -247,6 +255,10 @@ bool _multipleCompare({
     expression = expression.replaceAll(reg[0]!, result ? 'true' : 'false');
   }
 
+  expression = expression.replaceAllMapped(
+    RegExp(r'not\(\s*@[\w*-]+\s*\)|@[\w*-]+'),
+    (match) => '${_attributePresence(element, match[0]!)!}',
+  );
   final eval = Expression.parse(expression);
   final evaluator = const ExpressionEvaluator();
   final result = evaluator.eval(eval, {});
@@ -262,9 +274,11 @@ bool _singleCompare({
   required int position,
   required int length,
 }) {
+  final presence = _attributePresence(element, predicate);
+  if (presence != null) return presence;
   // [position() < 3]
   final positionReg = simplePosition.firstMatch(predicate);
-  final positionResult = _positionMatch(position, positionReg);
+  final positionResult = _positionMatch(position, length, positionReg);
   if (positionResult != null) return positionResult;
 
   // [@attr='gdd'] [function()='foo']
@@ -273,6 +287,11 @@ bool _singleCompare({
   if (attrResult != null) return attrResult;
 
   // [child<10]
+  final countResult = _countMatch(
+    element,
+    predicateCount.firstMatch(predicate),
+  );
+  if (countResult != null) return countResult;
   final childReg = predicateChild.firstMatch(predicate);
   final childResult = _childMatch(element, childReg);
   if (childResult != null) return childResult;
@@ -285,10 +304,23 @@ bool _singleCompare({
   throw UnsupportedError('Unsupported predicate: $predicate');
 }
 
-bool? _positionMatch(int position, RegExpMatch? reg) {
+bool? _attributePresence(XPathNode node, String predicate) {
+  final match = RegExp(
+    r'^(?:(not)\(\s*)?@([\w*-]+)\s*\)?$',
+  ).firstMatch(predicate);
+  if (match == null) return null;
+  final key = match[2]!;
+  final exists = key == '*'
+      ? node.attributes.isNotEmpty
+      : node.attributes.containsKey(key);
+  return match[1] == 'not' ? !exists : exists;
+}
+
+bool? _positionMatch(int position, int length, RegExpMatch? reg) {
   if (reg != null) {
     final op = reg.namedGroup('op')!;
-    final num = int.tryParse(reg.namedGroup('num')!) ?? 0;
+    final value = reg.namedGroup('num')!;
+    final num = value.startsWith('last') ? length : int.parse(value);
     return opCompare(position + 1, num, op);
   }
   return null;
@@ -307,7 +339,7 @@ bool? _equalMatch(XPathNode node, RegExpMatch? reg) {
       );
     }
     final leftValue = elementFunction(node: node, function: key);
-    if (leftValue == null) return false;
+    if (leftValue == null) return not(false);
     return not(opString(leftValue, rightValue, op));
   }
   return null;
@@ -328,6 +360,22 @@ bool? _childMatch(XPathNode element, RegExpMatch? reg) {
   return null;
 }
 
+bool? _countMatch(XPathNode element, RegExpMatch? reg) {
+  if (reg == null) return null;
+  final name = reg.namedGroup('child');
+  final count = element.children
+      .where(
+        (child) =>
+            child.isElement && (name == '*' || child.name?.qualified == name),
+      )
+      .length;
+  return opCompare(
+    count,
+    int.parse(reg.namedGroup('num')!),
+    reg.namedGroup('op')!,
+  );
+}
+
 bool? _functionMatch(XPathNode node, RegExpMatch? reg) {
   if (reg != null) {
     final notValue = reg.namedGroup('not') == 'not';
@@ -336,7 +384,7 @@ bool? _functionMatch(XPathNode node, RegExpMatch? reg) {
     final param1 = reg.namedGroup('param1')!.toLowerCase().trim();
     final param2 = reg.namedGroup('param2')!;
     final leftValue = elementFunction(node: node, function: param1);
-    if (leftValue == null) return false;
+    if (leftValue == null) return not(false);
     if (function == 'contains') {
       return not(leftValue.contains(param2));
     } else if (function == 'starts-with') {

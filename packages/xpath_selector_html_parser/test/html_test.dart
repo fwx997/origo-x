@@ -44,6 +44,73 @@ extension TestTransfer on Element {
 }
 
 void main() {
+  test('attribute presence and indexed text retain XPath context', () {
+    final doc = HtmlXPath.html(
+      '<div id="a"><p class="">first<b>nested</b>second</p>'
+      '<p>third<i>skip</i>fourth</p><p data-x="a|b/c">last</p></div>',
+    );
+    expect(doc.query('//p[@class]').nodes.length, 1);
+    expect(doc.query('//p[not(@class)]').nodes.length, 2);
+    expect(doc.query('//p[not(@*)]').nodes.length, 1);
+    expect(doc.query('//p[@class or @data-x]').nodes.length, 2);
+    expect(doc.query('//p/text()[2]').attrs, ['second', 'fourth']);
+    expect(doc.query('//p/text()').attrs, [
+      'first',
+      'second',
+      'third',
+      'fourth',
+      'last',
+    ]);
+    expect(
+      doc.query('//p [position()>1] [position()<last()]/text()[1]').attrs,
+      ['third'],
+    );
+    expect(doc.query('//p[@data-x="a|b/c"]/text()').attrs, ['last']);
+    expect(doc.query('//b/../text()[1]').attrs, ['first']);
+  });
+  test(
+    'count and last predicates select full catalogs without return links',
+    () {
+      final tree = HtmlXPath.html(
+        '<main><ul><li>A</li><li>B</li><li>C</li></ul>'
+        '<ul><li>Recommendation</li></ul><div><p>A</p><p>B</p>'
+        '<p class="title">Return</p></div></main>',
+      );
+      expect(tree.query('//ul[count(li)>1]/li').nodes.map((n) => n.text), [
+        'A',
+        'B',
+        'C',
+      ]);
+      expect(
+        tree.query('//ul[count(*)>=3 and count(li)!=0]/li').nodes,
+        hasLength(3),
+      );
+      expect(
+        tree.query('//div/p[position()<last()]').nodes.map((n) => n.text),
+        ['A', 'B'],
+      );
+      expect(
+        tree.query('//div/p[position()=last()]').nodes.single.text,
+        'Return',
+      );
+      expect(tree.query('//div/p[position()<=2]').nodes.map((n) => n.text), [
+        'A',
+        'B',
+      ]);
+      expect(
+        tree.query('//div/p[not(@class="title")]').nodes.map((n) => n.text),
+        ['A', 'B'],
+      );
+      expect(
+        tree
+            .query('//div/p[not(contains(@class,"title"))]')
+            .nodes
+            .map((n) => n.text),
+        ['A', 'B'],
+      );
+    },
+  );
+
   test('XBS wildcard attribute predicates preserve node-set comparison', () {
     final tree = HtmlXPath.html(
       '<main><div id="other" class="sortList">A</div>'

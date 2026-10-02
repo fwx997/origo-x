@@ -15,16 +15,18 @@ import 'xbs_discovery.dart';
 
 /// Executes original XBS actions. No conversion to Legado is involved.
 class XbsRuntime {
-  XbsRuntime({LegadoTransport? transport, XbsJavascript Function()? javascript})
-    : _transport = transport ?? LegadoHttpTransport(),
-      _javascript = javascript ?? XbsQuickJs.new;
+  XbsRuntime({LegadoTransport? transport, this.javascript})
+    : _transport = transport ?? LegadoHttpTransport();
 
   final LegadoTransport _transport;
-  final XbsJavascript Function() _javascript;
+  final XbsJavascript Function()? javascript;
+  final Map<String, Map<String, Object?>> _scriptCaches = {};
   final Map<String, BookSourceBook> _books = {};
   final Map<String, String> _catalogs = {};
+  final Map<String, Map<String, String>> _chapterTitles = {};
 
   void close({bool force = true}) {
+    _scriptCaches.clear();
     if (_transport case final LegadoHttpTransport transport) {
       transport.close(force: force);
     }
@@ -49,7 +51,12 @@ class XbsRuntime {
         ...stringMap(rules['httpHeaders']),
       },
     };
-    final js = _javascript();
+    final cache = _scriptCaches.remove(registered.id) ?? <String, Object?>{};
+    _scriptCaches[registered.id] = cache;
+    if (_scriptCaches.length > 32) {
+      _scriptCaches.remove(_scriptCaches.keys.first);
+    }
+    final js = javascript?.call() ?? XbsQuickJs(cache: cache);
     try {
       final engine = XbsRuleEngine(js, config, params);
       final request = await _request(engine, input);
@@ -65,7 +72,7 @@ class XbsRuntime {
           'return functionName(config,params,result);',
           config,
           params,
-          response.body,
+          document,
         );
       }
       return await parse(
@@ -97,6 +104,14 @@ class XbsRuntime {
       );
     }
     final request = value is Map ? stringMap(value) : {'url': '$value'};
+    for (final key in [
+      'responseFormatType',
+      'responseEncode',
+      'requestParamsEncode',
+    ]) {
+      if (request[key] != null) config[key] = request[key];
+    }
+    engine.params['requestInfo'] = request;
     if (request.entries.any(
       (e) =>
           e.key.toLowerCase().startsWith('webview') &&
@@ -138,6 +153,18 @@ class XbsRuntime {
       ...stringMap(config['httpHeaders']),
       ...stringMap(request['httpHeaders']),
     };
+    final contentType = headers.entries
+        .where((e) => e.key.toLowerCase() == 'content-type')
+        .lastOrNull
+        ?.value
+        .toString()
+        .split(';')
+        .first
+        .trim()
+        .toLowerCase();
+    final jsonBody =
+        contentType == 'application/json' ||
+        (contentType?.endsWith('+json') ?? false);
     return LegadoRequestTemplate(
       url: uri,
       method: post ? LegadoRequestMethod.post : LegadoRequestMethod.get,
@@ -151,6 +178,8 @@ class XbsRuntime {
       body: post
           ? (request['httpParams'] is String
                 ? '${request['httpParams']}'
+                : jsonBody
+                ? jsonEncode(request['httpParams'] ?? {})
                 : form)
           : null,
     );
@@ -197,6 +226,7 @@ class XbsRuntime {
     String query = '',
     int page = 1,
     int size = 20,
+    Map<String, dynamic> queryInfo = const {},
   }) => {
     'keyWord': query,
     'pageIndex': page,
@@ -204,7 +234,26 @@ class XbsRuntime {
     'offset': (page - 1) * size,
     'filter': '',
     'filters': <String, dynamic>{},
+    'queryInfo': queryInfo,
   };
+
+  Map<String, dynamic> _queryInfo(
+    RegisteredBookSource source,
+    String bookId, {
+    String? url,
+    bool chapter = false,
+  }) {
+    final book = _books['${source.id}\n$bookId'];
+    final titles = _chapterTitles['${source.id}\n$bookId'] ?? const {};
+    return {
+      'detailUrl': bookId,
+      'bookId': bookId,
+      'id': url ?? bookId,
+      'url': url ?? bookId,
+      'bookName': book?.title ?? '',
+      'title': chapter ? titles[url] ?? '' : book?.title ?? '',
+    };
+  }
 
   Future<BookSourceSearchPage> search(
     RegisteredBookSource source,
@@ -230,7 +279,7 @@ class XbsRuntime {
     for (final item in await result.items()) {
       SourceTaskContext.cancellation?.throwIfCancelled();
       final title = await result.field(item, 'bookName');
-      final rawId = await result.field(item, 'detailUrl');
+      final rawId = await result.field(item, 'detailUrl', first: true);
       if (title.isEmpty || rawId.isEmpty) continue;
       final id = _identity(rawId, result.uri);
       if (!seen.add(id)) continue;
@@ -289,12 +338,49 @@ class XbsRuntime {
     }
   }
 
-  String _identity(String value, Uri base) =>
-      RegExp(r'^\d+$').hasMatch(value) ? value : base.resolve(value).toString();
+  String _identity(String value, Uri base) {
+    if (RegExp(r'^\d+(?:_\d+)*$').hasMatch(value)) return value;
+    final trimmed = value.trim();
+    if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+      try {
+        final decoded = jsonDecode(trimmed);
+        if (decoded is Map || decoded is List) return value;
+      } on FormatException {
+        // A non-JSON value still follows ordinary relative-URL resolution.
+      }
+    }
+    return base.resolve(value).toString();
+  }
 
-  Future<BookSourceBook> getBook(RegisteredBookSource source, String bookId) =>
-      _action(source, 'bookDetail', bookId, _params(), (page) async {
-        final previous = _books['${source.id}\n$bookId'];
+  Future<BookSourceBook> getBook(
+    RegisteredBookSource source,
+    String bookId,
+  ) async {
+    final previous = _books['${source.id}\n$bookId'];
+    final rules = XbsSource.fromRegistered(source).action('bookDetail');
+    // Some API sources supply all book metadata in search/discovery and leave
+    // only parser metadata in bookDetail. Their IDs are not detail page URLs.
+    const detailFields = {
+      'requestInfo',
+      'JSParser',
+      'bookName',
+      'author',
+      'desc',
+      'cover',
+      'cat',
+      'lastChapterTitle',
+      'chapterListUrl',
+    };
+    final hasDetail = detailFields.any(
+      (key) => rules[key] != null && rules[key] != '',
+    );
+    if (!hasDetail && previous != null) return previous;
+    return _action(
+      source,
+      'bookDetail',
+      bookId,
+      _params(queryInfo: _queryInfo(source, bookId)),
+      (page) async {
         var title = await page.field(page.document, 'bookName');
         if (title.isEmpty) title = previous?.title ?? '';
         if (title.isEmpty && page.document is String) {
@@ -309,12 +395,25 @@ class XbsRuntime {
         if (title.isEmpty) {
           throw const BookSourceProtocolException('XBS：详情未返回书名');
         }
-        final catalog = await page.field(page.document, 'chapterListUrl');
+        final catalog = await page.field(
+          page.document,
+          'chapterListUrl',
+          first: true,
+        );
         if (catalog.isNotEmpty) {
           _catalogs['${source.id}\n$bookId'] = _identity(catalog, page.uri);
         }
         return _book(page, page.document, bookId, title, fallback: previous);
-      });
+      },
+    );
+  }
+
+  int _pageLimit(RegisteredBookSource source, String action, int maximum) {
+    final rules = XbsSource.fromRegistered(source).action(action);
+    final keys = stringMap(rules['moreKeys']);
+    final configured = int.tryParse('${keys['maxPage']}') ?? maximum;
+    return configured > 0 ? configured.clamp(1, maximum) : maximum;
+  }
 
   Future<List<BookSourceChapter>> getChapters(
     RegisteredBookSource source,
@@ -324,16 +423,20 @@ class XbsRuntime {
     final chapters = <BookSourceChapter>[];
     final seenPages = <String>{};
     final seen = <String>{};
-    for (var hop = 1; hop <= 100 && seenPages.add(url); hop++) {
+    final maxPages = _pageLimit(source, 'chapterList', 100);
+    for (var hop = 1; hop <= maxPages && seenPages.add(url); hop++) {
       final next = await _action(
         source,
         'chapterList',
         url,
-        _params(page: hop),
+        _params(
+          page: hop,
+          queryInfo: _queryInfo(source, bookId, url: url),
+        ),
         (page) async {
           for (final item in await page.items()) {
             final title = await page.field(item, 'title');
-            final raw = await page.field(item, 'url');
+            final raw = await page.field(item, 'url', first: true);
             if (title.isEmpty || raw.isEmpty) continue;
             final id = _identity(raw, page.uri);
             if (seen.add(id)) {
@@ -354,6 +457,12 @@ class XbsRuntime {
     if (chapters.isEmpty) {
       throw const BookSourceProtocolException('XBS：没有解析到章节目录');
     }
+    _chapterTitles['${source.id}\n$bookId'] = {
+      for (final chapter in chapters) chapter.id: chapter.title,
+    };
+    if (_chapterTitles.length > 10) {
+      _chapterTitles.remove(_chapterTitles.keys.first);
+    }
     return chapters;
   }
 
@@ -365,12 +474,16 @@ class XbsRuntime {
     var url = chapterId;
     final seen = <String>{};
     final parts = <String>[];
-    for (var hop = 1; hop <= 20 && seen.add(url); hop++) {
+    final maxPages = _pageLimit(source, 'chapterContent', 20);
+    for (var hop = 1; hop <= maxPages && seen.add(url); hop++) {
       final next = await _action(
         source,
         'chapterContent',
         url,
-        _params(page: hop),
+        _params(
+          page: hop,
+          queryInfo: _queryInfo(source, bookId, url: chapterId, chapter: true),
+        ),
         (page) async {
           final content = await page.field(
             page.document,
@@ -516,11 +629,17 @@ class _XbsPage {
     final result = scripted
         ? document
         : await engine.evaluate(document, engine.config['list'], nodes: true);
-    if (result is List) return result;
-    if (result is Map && result['list'] is List) {
-      return List<Object?>.from(result['list']);
+    List<Object?> items;
+    if (result is List) {
+      items = result;
+    } else if (result is Map && result['list'] is List) {
+      items = List<Object?>.from(result['list']);
+    } else {
+      items = result == null ? [] : [result];
     }
-    return result == null ? [] : [result];
+    final keys = stringMap(engine.config['moreKeys']);
+    final skip = int.tryParse('${keys['skipCount']}') ?? 0;
+    return items.skip(skip.clamp(0, items.length)).toList();
   }
 
   Future<String> field(
@@ -549,7 +668,7 @@ class _XbsPage {
   }
 
   Future<String> nextUrl() async {
-    final next = await field(document, 'nextPageUrl');
+    final next = await field(document, 'nextPageUrl', first: true);
     return next.isEmpty ? '' : uri.resolve(next).toString();
   }
 }

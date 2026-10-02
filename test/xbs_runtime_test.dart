@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:typed_data';
+import 'package:html/parser.dart' as html;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:xxread/book_sources/legado/legado_request.dart';
@@ -51,6 +52,95 @@ Map<String, dynamic> fixture() => {
 
 void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
+
+  test(
+    'source skipCount and maxPage bound catalogs and content pages',
+    () async {
+      final config = fixture();
+      config['chapterList'] = Map<String, dynamic>.from(
+        config['chapterList'] as Map,
+      );
+      config['chapterContent'] = Map<String, dynamic>.from(
+        config['chapterContent'] as Map,
+      );
+      (config['chapterList'] as Map)['moreKeys'] = {'skipCount': 1};
+      final transport = _FixtureTransport();
+      final runtime = XbsRuntime(
+        transport: transport,
+        javascript: _NoJavascript.new,
+      );
+      var source = XbsSource('limits', config).toRegisteredSource();
+      final chapters = await runtime.getChapters(
+        source,
+        'https://books.test/catalog/2',
+      );
+      expect(chapters.single.title, 'Chapter Two');
+      (config['chapterList'] as Map)['moreKeys'] = {'maxPage': 1};
+      (config['chapterContent'] as Map)['moreKeys'] = {'maxPage': 1};
+      (config['chapterContent'] as Map)['nextPageUrl'] =
+          '"https://books.test/chapter/2"';
+      source = XbsSource('limits', config).toRegisteredSource();
+      final limited = await runtime.getChapters(
+        source,
+        'https://books.test/catalog/1',
+      );
+      expect(limited.length, 1);
+      final content = await runtime.getChapterContent(
+        source,
+        bookId: '1',
+        chapterId: limited.single.id,
+      );
+      expect(content.content, contains('First paragraph'));
+      expect(
+        transport.requests.where((r) => r.url.path == '/chapter/2'),
+        isEmpty,
+      );
+      expect(
+        transport.requests.where((r) => r.url.path == '/catalog/2').length,
+        1,
+      );
+    },
+  );
+
+  test(
+    'legacy replacement chains remove labels without breaking XPath unions',
+    () async {
+      final engine = XbsRuleEngine(_NoJavascript(), {}, {});
+      expect(
+        await engine.text('<p>《书名》</p>', '//p||@replace:《||@replace:》'),
+        '书名',
+      );
+      expect(
+        await engine.text('<p>[分类]</p>', '//p|@replace:[|@replace:]'),
+        '分类',
+      );
+      expect(
+        await engine.text('<p>首<b>嵌套</b>尾</p>', '//p/text()[2]', content: true),
+        '尾',
+      );
+    },
+  );
+
+  test(
+    'XPath item fields include the detached item root and legacy attributes',
+    () async {
+      final engine = XbsRuleEngine(_NoJavascript(), {}, {});
+      final item = html
+          .parseFragment('<a href="/chapter/1"><dd>Chapter one</dd></a>')
+          .children
+          .single;
+      expect(await engine.text(item, '//a/@href'), '/chapter/1');
+      expect(await engine.text(item, '/@href'), '/chapter/1');
+      expect(await engine.text(item, '//dd/text()'), 'Chapter one');
+      expect(
+        await engine.text(
+          '<div class="image"><img src="/cover.jpg"></div>',
+          '//div[@*=image]/img/@src',
+        ),
+        '/cover.jpg',
+      );
+    },
+  );
 
   test(
     'all 185 original rules survive import, reload, and repeat import',
@@ -177,6 +267,65 @@ void main() {
   });
 
   test(
+    'POST bodies honor JSON media types and preserve raw and form data',
+    () async {
+      final cases = [
+        (
+          'Application/JSON; charset=utf-8',
+          <String, Object?>{
+            'items': [
+              1,
+              {'name': '中文'},
+            ],
+            'enabled': true,
+          },
+        ),
+        (
+          'application/vendor+json',
+          <Object?>[
+            1,
+            {'name': '中文'},
+          ],
+        ),
+        ('application/json', '{"literal":"%@keyWord"}'),
+        (
+          'application/x-www-form-urlencoded',
+          <String, Object?>{'q': '中 文', 'page': 2},
+        ),
+      ];
+      for (final (contentType, parameters) in cases) {
+        final config = fixture();
+        config['searchBook'] = <String, dynamic>{
+          ...config['searchBook'] as Map,
+          'requestInfo': {
+            'url': '/search',
+            'POST': true,
+            'httpParams': parameters,
+            'httpHeaders': {'content-type': contentType},
+          },
+        };
+        final transport = _FixtureTransport();
+        final runtime = XbsRuntime(
+          transport: transport,
+          javascript: _NoJavascript.new,
+        );
+        await runtime.search(
+          XbsSource('post', config).toRegisteredSource(),
+          'query',
+        );
+        final body = transport.requests.single.body!;
+        if (parameters is String) {
+          expect(body, parameters);
+        } else if (contentType == 'application/x-www-form-urlencoded') {
+          expect(Uri.splitQueryString(body), {'q': '中 文', 'page': '2'});
+        } else {
+          expect(jsonDecode(body), parameters);
+        }
+      }
+    },
+  );
+
+  test(
     'uses the original Apple charset identifiers without double encoding',
     () async {
       final config = fixture();
@@ -224,7 +373,7 @@ class _FixtureTransport implements LegadoTransport {
       '/book/1' =>
         '<h1>Example Book</h1><p>Description</p><a href="/catalog/1">Catalog</a>',
       '/catalog/1' =>
-        '<ul><li><a href="/chapter/1">Chapter One</a></li></ul><a rel="next" href="/catalog/2">Next</a>',
+        '<a rel="next" href="/catalog/2">Next</a><ul><li><a href="/chapter/1">Chapter One</a></li></ul><a rel="next" href="/catalog/2">Next</a>',
       '/catalog/2' =>
         '<ul><li><a href="/chapter/1">Chapter One</a></li><li><a href="/chapter/2">Chapter Two</a></li></ul>',
       '/chapter/1' =>

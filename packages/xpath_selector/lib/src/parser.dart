@@ -5,18 +5,46 @@ import 'model/base.dart';
 
 /// parse xpath selector
 List<List<Selector>> parseSelectGroup(String xpath) {
-  final combine = xpath.split('|');
+  final combine = _splitPath(xpath, '|');
   final selectorList = <List<Selector>>[];
 
-  for (final _path in combine) {
-    final path = _path.trim();
-    final xpathItem = xpathGroup
-        .allMatches(path)
-        .map((e) => e.group(0)!.trim());
+  for (final groupPath in combine) {
+    final path = groupPath.trim();
+    final xpathItem = _splitPath(path, '/').where((part) => part.isNotEmpty);
     selectorList.add(xpathItem.map(_parseSelector).toList());
   }
 
   return selectorList;
+}
+
+// Delimiters inside predicates or quoted values belong to that step.
+Iterable<String> _splitPath(String value, String delimiter) sync* {
+  var start = 0;
+  var depth = 0;
+  String? quote;
+  for (var i = 0; i < value.length; i++) {
+    final char = value[i];
+    if (quote != null) {
+      if (char == quote) quote = null;
+      continue;
+    }
+    if (char == '"' || char == "'") {
+      quote = char;
+      continue;
+    }
+    if (char == '[') depth++;
+    if (char == ']') depth--;
+    if (char != delimiter || depth != 0) continue;
+    if (delimiter == '/' && (i == start || value.substring(start, i) == '/')) {
+      continue;
+    }
+    yield value.substring(start, i).trim();
+    start = delimiter == '/' ? i : i + 1;
+  }
+  if (quote != null || depth != 0) {
+    throw FormatException('Invalid XPath: $value');
+  }
+  yield value.substring(start).trim();
 }
 
 Selector _parseSelector(String input) {
@@ -25,11 +53,14 @@ Selector _parseSelector(String input) {
   if (input.startsWith('//')) {
     // descendant
     selectorType = SelectorType.descendant;
-    source = input.substring(2);
+    source = input.substring(2).trim();
   } else if (input.startsWith('/')) {
     // self
     selectorType = SelectorType.self;
-    source = input.substring(1);
+    source = input.substring(1).trim();
+  } else if (input == '.' || input == '..') {
+    selectorType = SelectorType.self;
+    source = input;
   } else {
     throw FormatException("'$input' is not a valid xpath query string");
   }
@@ -59,6 +90,18 @@ Selector _parseSelector(String input) {
       .whereType<String>()
       .toList();
 
+  nodeTest = nodeTest.trim();
+  if (nodeTest == 'text()') {
+    return Selector(
+      selectorType: selectorType,
+      function: 'text()',
+      axes: SelectorAxes(
+        nodeTest: '#text',
+        axis: AxesAxis.child,
+        predicate: predicateList,
+      ),
+    );
+  }
   if (nodeTest == '.') {
     axis = AxesAxis.self;
     nodeTest = '*';
@@ -78,6 +121,17 @@ Selector _parseSelector(String input) {
 }
 
 Selector? _parseSimpleSelector(SelectorType selectorType, String source) {
+  if (source == 'text()') {
+    return Selector(
+      selectorType: selectorType,
+      function: 'text()',
+      axes: SelectorAxes(
+        nodeTest: '#text',
+        axis: AxesAxis.child,
+        predicate: [],
+      ),
+    );
+  }
   // attr
   if (source.startsWith('@')) {
     return Selector(

@@ -1,0 +1,82 @@
+{
+  "sourceName": "x-松鹤阅读",
+  "sourceType": "text",
+  "sourceUrl": "https://bookshelf.html5.qq.com",
+  "httpHeaders": {
+    "User-Agent": "Mozilla/5.0 (Linux; U; Android 13; zh-cn; V2183A Build/TP1A.220624.014) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/89.0.4389.72 MQQBrowser/13.4 Mobile Safari/537.36 COVC/046223"
+  },
+  "bookWorld": {
+    "女频": {
+      "cat": "$.subject\n||@js:\nreturn result.toString()",
+      "author": "$..author\r\n||@js:\nreturn result.toString().replace(\"辰东\", \"辰東\")",
+      "responseFormatType": "json",
+      "bookName": "$.resourceName\n||@js:\nreturn result.toString()",
+      "desc": "$.summary\n||@js:\nreturn result.toString()",
+      "requestInfo": "@js:\r\n\r\nlet { _type } = params.filters\r\nlet url = `https://bookshelf.html5.qq.com/qbread/api/rank/list`\r\nlet hp = {\r\n    \"ch=\": \"001995\",\r\n    \"groupid\": _type,\r\n    \"start\": params.pageIndex,\r\n    \"count\": \"20\",\r\n    \"sort\": \"0\",\r\n    \"sub\": \"\",\r\n    \"tag\": \"\",\r\n    \"words\": \"\",\r\n    \"finish\": \"\",\r\n}\r\nlet hh = {\r\n    \"Referer\": `https://bookshelf.html5.qq.com/qbread/categorylist?traceid=0809004&sceneid=FeedsTab&strageid=&ch=001995&tabfrom=top&feeds_version=8516&reader_version=0&groupid=${_type}&tag_type_id=2`,\r\n}\r\nreturn {\r\n    \"url\": url,\r\n    \"httpParams\": hp,\r\n    \"httpHeaders\": hh,\r\n    \"forbidCookie\": true,\r\n    \"cacheTime\": 600,\r\n}",
+      "httpHeaders": {
+        "User-Agent": "Mozilla/5.0 (Linux; U; Android 13; zh-cn; V2183A Build/TP1A.220624.014) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/89.0.4389.72 MQQBrowser/13.4 Mobile Safari/537.36 COVC/046223"
+      },
+      "actionID": "bookWorld",
+      "detailUrl": "$..resourceID\n||@js:\nreturn result.toString()",
+      "host": "https://bookshelf.html5.qq.com",
+      "cover": "$.picurl\n||@js:\nreturn result.toString()",
+      "parserID": "DOM",
+      "_sIndex": 1,
+      "list": "$.rows",
+      "moreKeys": {
+        "pageSize": 20,
+        "requestFilters": "_type\n现代言情::1524\n古代言情::1523\n悬疑侦探::1518\n仙侠奇缘::1517\n玄幻言情::1516\n浪漫青春::1522\n科幻空间::1519\n游戏竞技::1520\n纯爱::1707"
+      },
+      "validConfig": ""
+    }
+  },
+  "bookDetail": {
+    "parserID": "DOM",
+    "responseFormatType": "html",
+    "actionID": "bookDetail"
+  },
+  "searchBook": {
+    "cat": "$..tag_views\n||@js:\nreturn result.toString()",
+    "author": "$..author\r\n||@js:\nreturn result.toString().replace(\"辰东\", \"辰東\")",
+    "responseFormatType": "json",
+    "bookName": "$..title\n||@js:\nreturn result.toString()",
+    "httpHeaders": {
+      "User-Agent": "Mozilla/5.0 (Linux; U; Android 13; zh-cn; V2183A Build/TP1A.220624.014) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/89.0.4389.72 MQQBrowser/13.4 Mobile Safari/537.36 COVC/046223"
+    },
+    "requestInfo": "@js:\r\n\r\nlet url = config.host.replace(\"bookshelf.\", \"so.\") + \"/ajax/real/search_result\"\r\nlet hp = {\r\n    \"q\": params.keyWord,\r\n    \"noTab\": \"0\",\r\n    \"tabId\": \"360\",\r\n    \"sogou_huichuan_hippy\": \"1\",\r\n    \"jump_from\": \"1_01_22_01\",\r\n}\r\nreturn {\r\n    \"url\": url,\r\n    \"httpParams\": hp,\r\n    \"httpHeaders\": config.httpHeaders,\r\n    //\"forbidCookie\": true,\r\n    \"cacheTime\": 0,\r\n}",
+    "host": "https://bookshelf.html5.qq.com",
+    "actionID": "searchBook",
+    "desc": "$..abstract\n||@js:\nreturn result.toString()",
+    "cover": "$..cover_url\n||@js:\nreturn result.toString()",
+    "validConfig": "",
+    "list": "$..state[?(@.dataID==360)]",
+    "parserID": "DOM",
+    "detailUrl": "$..docId\n||@js:\nreturn result.toString().match(/_(.*)/)[1]"
+  },
+  "chapterList": {
+    "actionID": "chapterList",
+    "validConfig": "",
+    "requestInfo": "@js:\r\n\r\nlet url = \"/qbread/api/book/all-chapter\"\r\nlet hp = {\r\n    \"bookId\": params.queryInfo.detailUrl,\r\n}\r\nlet hh = {\r\n    \"referer\": \"https://bookshelf.html5.qq.com/qbread\",\r\n}\r\nreturn {\r\n    \"url\": url,\r\n    \"httpParams\": hp,\r\n    \"httpHeaders\": hh,\r\n    //\"forbidCookie\": true,\r\n    \"cacheTime\": 600,\r\n}",
+    "title": "serialName",
+    "host": "https://bookshelf.html5.qq.com",
+    "httpHeaders": {
+      "User-Agent": "Mozilla/5.0 (Linux; U; Android 13; zh-cn; V2183A Build/TP1A.220624.014) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/89.0.4389.72 MQQBrowser/13.4 Mobile Safari/537.36 COVC/046223"
+    },
+    "list": "rows",
+    "responseFormatType": "json",
+    "parserID": "DOM",
+    "url": "@js:\nreturn params.queryInfo.detailUrl + \"_\" + result.serialID"
+  },
+  "chapterContent": {
+    "validConfig": "",
+    "content": "$.data.Content[0].Content[0]",
+    "actionID": "chapterContent",
+    "requestInfo": "@js:\r\n\r\nlet url = `${config.host.replace(\"bookshelf.\", \"novel.\")}/be-api/content/ads-read`\r\nlet match = params.queryInfo.url.match(/(.*?)_(.*)/)\r\n\r\nlet hp = {\r\n\t\"Scene\": \"chapter\",\r\n\t\"ContentAnchorBatch\": [{\r\n\t\t\"BookID\": match[1],\r\n\t\t\"ChapterSeqNo\": [match[2]]\r\n\t}]\r\n}\r\n\r\nlet hh = {\r\n    \"Host\": \"novel.html5.qq.com\",\r\n    \"Q-GUID\": \"fixture-guid\",\r\n    \"Content-Type\": \"application/json\",\r\n    \"user-agent\": \"Mozilla/5.0 (Linux; U; Android 13; zh-cn; V2183A Build/TP1A.220624.014) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/89.0.4389.72 MQQBrowser/13.4 Mobile Safari/537.36 COVC/046223\"\r\n}\r\n\r\nreturn {\r\n    \"url\": url,\r\n    \"POST\": true,\r\n    \"httpParams\": hp,\r\n    \"httpHeaders\": hh,\r\n    \"cacheTime\": 0\r\n}",
+    "host": "https://bookshelf.html5.qq.com",
+    "httpHeaders": {
+      "User-Agent": "Mozilla/5.0 (Linux; U; Android 13; zh-cn; V2183A Build/TP1A.220624.014) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/89.0.4389.72 MQQBrowser/13.4 Mobile Safari/537.36 COVC/046223"
+    },
+    "responseFormatType": "json",
+    "parserID": "DOM"
+  }
+}

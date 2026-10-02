@@ -28,10 +28,23 @@ def verify(package, label):
             assert not any(token in name for name in names), token
             assert token.encode() not in binary, token
         assert not any('kernel_blob.bin' in name for name in names), 'Debug snapshot'
+        helpers = [n for n in names if n.endswith('/flutter_assets/assets/xbs/native_helpers.js')]
+        assert len(helpers) == 1, 'Missing or duplicated XBS native helpers'
+        helper_bytes = archive.read(helpers[0])
+        expected_helpers = Path(__file__).resolve().parents[1] / 'assets/xbs/native_helpers.js'
+        assert helper_bytes == expected_helpers.read_bytes(), 'XBS helpers differ from build source'
+        for symbol in [b'XPathParserWithSource', b'md5Encode', b'base64Decode', b'setCache']:
+            assert symbol in helper_bytes, 'Missing XBS helper: ' + symbol.decode()
+        licenses = [n for n in names if n.endswith('/flutter_assets/assets/xbs/THIRD_PARTY_LICENSES.txt')]
+        assert len(licenses) == 1, 'Missing XBS helper licenses'
+        assert not any('/source-audit/' in name for name in names), 'Local audit data included'
     return {
         'version': version, 'build': build, 'compiled_build_label': label,
         'required_strings_present': required, 'donation_assets_removed': True,
         'single_payload': True, 'zip_integrity': 'passed',
+        'xbs_helpers_match_source': True,
+        'xbs_helpers_sha256': hashlib.sha256(helper_bytes).hexdigest(),
+        'xbs_helper_licenses_present': True,
         'sha256': hashlib.sha256(package.read_bytes()).hexdigest(),
     }
 
