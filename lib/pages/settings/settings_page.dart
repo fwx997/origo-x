@@ -20,7 +20,7 @@ import 'package:xxread/pages/settings/about/changelog_page.dart';
 import 'package:xxread/pages/settings/about/open_source_licenses_page.dart';
 import 'package:xxread/pages/settings/ai_settings_page.dart';
 import 'package:xxread/pages/settings/cache_management_page.dart';
-import 'package:xxread/pages/settings/floating_navigation_settings_page.dart';
+import 'package:xxread/pages/settings/preferences_page.dart';
 import 'package:xxread/pages/settings/library_layout_settings_page.dart';
 import 'package:xxread/pages/settings/sync/webdav_sync_page.dart';
 import 'package:xxread/reader_core/ai/ai_service.dart';
@@ -446,11 +446,11 @@ class _SettingsPageState extends State<SettingsPage> {
                 icon: Icons.view_module_outlined,
               ),
               _buildActionSetting(
-                title: l10n.settingsFloatingNavigationTitle,
+                title: '偏好设置',
                 subtitle: l10n.settingsFloatingNavigationSubtitle,
                 onTap: () => Navigator.of(context).push(
                   MaterialPageRoute<void>(
-                    builder: (_) => const FloatingNavigationSettingsPage(),
+                    builder: (_) => const PreferencesPage(),
                   ),
                 ),
                 icon: Icons.dock_outlined,

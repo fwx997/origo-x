@@ -20,7 +20,10 @@ def verify(package, label):
         assert info['CFBundleShortVersionString'] == version
         assert info['CFBundleVersion'] == build
         binary = archive.read('Payload/Runner.app/Frameworks/App.framework/App')
-        required = [label, '从 JSON / XBS 文件添加', '切换站点']
+        required = [
+            label, '从 JSON / XBS 文件添加', '切换站点',
+            '书籍设置', '文字亮度', '字体粗细', '章节进度', '偏好设置',
+        ]
         for text in required:
             assert any(text.encode(enc) in binary for enc in ('utf-8', 'utf-16-le')), text
         forbidden = ['cyber_begging_paper', 'alipay_donation_qr', 'wechat_donation_qr']

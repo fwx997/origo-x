@@ -41,6 +41,25 @@ class BookSearchFilter {
         );
   }
 
+  /// Rank even unfiltered results: some sites return unrelated recommendations.
+  /// Exact matches precede partial matches, followed by the remaining books.
+  int relevance(BookSourceBook book) {
+    final needle = field == BookSearchField.author
+        ? normalizeAuthor(query)
+        : normalize(query);
+    if (needle.isEmpty) return 2;
+    final fields = switch (field) {
+      BookSearchField.any => [
+        normalize(book.title),
+        normalizeAuthor(book.author),
+      ],
+      BookSearchField.title => [normalize(book.title)],
+      BookSearchField.author => [normalizeAuthor(book.author)],
+    };
+    if (fields.contains(needle)) return 0;
+    return fields.any((text) => text.contains(needle)) ? 1 : 2;
+  }
+
   static bool sameWork(BookSourceBook left, BookSourceBook right) {
     final title = normalize(left.title);
     if (title.isEmpty || title != normalize(right.title)) return false;

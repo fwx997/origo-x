@@ -9,6 +9,10 @@ import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 import 'package:xxread/book_sources/models/registered_book_source.dart';
 import 'package:xxread/book_sources/protocol/book_source_protocol.dart';
 import 'package:xxread/book_sources/services/book_source_client.dart';
+import 'package:xxread/book_sources/services/book_source_registry.dart';
+import 'package:xxread/book_sources/services/book_source_switch.dart';
+import 'package:xxread/pages/book_sources/source_search_page.dart';
+import 'package:xxread/pages/book_sources/widgets/sourced_book_widgets.dart';
 import 'package:xxread/book_sources/services/book_source_chapter_text.dart';
 import 'package:xxread/book_sources/services/book_source_reading_progress.dart';
 import 'package:xxread/book_sources/services/book_source_shelf_service.dart';
@@ -25,6 +29,7 @@ import 'package:xxread/core/reader/reader_margin_settings.dart';
 import 'package:xxread/core/reader/reader_aloud_controller.dart';
 import 'package:xxread/core/reader/reader_safe_area.dart';
 import 'package:xxread/core/reader/reader_settings.dart';
+import 'package:xxread/core/reader/reader_text_appearance.dart';
 import 'package:xxread/core/reader/reader_system_ui.dart';
 import 'package:xxread/core/reader/reader_tap_zones.dart';
 import 'package:xxread/core/reader/reader_text_pagination.dart';
@@ -68,6 +73,7 @@ import 'package:xxread/widgets/reader_vertical_paging_surface.dart';
 import 'package:xxread/widgets/side_toast.dart';
 
 import 'themes/reader_custom_themes_page.dart';
+import 'source_book_settings_page.dart';
 
 typedef BookSourcePageMode = ReaderPageMode;
 
@@ -79,6 +85,7 @@ class BookSourceReaderPage extends StatefulWidget {
   final BookSourceReadingProgressStore progressStore;
   final BookSourceShelfService? shelfService;
   final ReaderThemePalette? initialTheme;
+  final BookSourceSwitchPlan? initialSwitch;
 
   const BookSourceReaderPage({
     super.key,
@@ -88,6 +95,7 @@ class BookSourceReaderPage extends StatefulWidget {
     this.progressStore = const BookSourceReadingProgressStore(),
     this.shelfService,
     this.initialTheme,
+    this.initialSwitch,
   });
 
   @override
@@ -136,8 +144,14 @@ class _BookSourceReaderPageState extends State<BookSourceReaderPage>
   bool _loadingCatalog = true;
   bool _loadingContent = false;
   bool _controlsVisible = false;
+  bool _changingSource = false;
+  bool _switchingReader = false;
   Object? _error;
   double _fontSize = 19;
+  double _textBrightness = 1;
+  bool _dimNightText = true;
+  int _fontWeight = 400;
+  bool _showChapterProgress = true;
   double _lineHeight = 1.75;
   double _letterSpacing = ReaderSettings.defaultLetterSpacing;
   ReaderTextAlignment _textAlignment = ReaderSettings.defaultTextAlignment;
@@ -229,6 +243,10 @@ class _BookSourceReaderPageState extends State<BookSourceReaderPage>
 
   ReaderSettings get _readerSettings => ReaderSettings(
     fontSize: _fontSize,
+    textBrightness: _textBrightness,
+    dimNightText: _dimNightText,
+    fontWeight: _fontWeight,
+    showChapterProgress: _showChapterProgress,
     lineHeight: _lineHeight,
     letterSpacing: _letterSpacing,
     textAlignment: _textAlignment,
@@ -276,6 +294,9 @@ class _BookSourceReaderPageState extends State<BookSourceReaderPage>
         ? _leafStatusController.value.revision
         : 0,
     _annotationRevision,
+    _textBrightness,
+    _dimNightText,
+    _fontWeight,
   );
 
   bool _shouldUseTwoPageLayout(Size size) =>
@@ -423,7 +444,7 @@ class _BookSourceReaderPageState extends State<BookSourceReaderPage>
     _controlsTimer?.cancel();
     _pagedLayoutWarmTimer?.cancel();
     _readerAloudController?.dispose();
-    unawaited(_saveProgress());
+    if (!_switchingReader) unawaited(_saveProgress());
     unawaited(_flushReadingSession());
     _verticalPagePositionsListener.itemPositions.removeListener(
       _onVerticalPagePositionsChanged,
@@ -439,8 +460,10 @@ class _BookSourceReaderPageState extends State<BookSourceReaderPage>
       ..dispose();
     unawaited(ReaderVolumeKeyController.deactivate(this));
     unawaited(ReaderKeepScreenOnController.deactivate(this));
-    unawaited(ReaderSystemUiController.restore());
-    unawaited(ReadingResumeService.markClosed(_shelfBookId));
+    if (!_switchingReader) {
+      unawaited(ReaderSystemUiController.restore());
+      unawaited(ReadingResumeService.markClosed(_shelfBookId));
+    }
     super.dispose();
   }
 
@@ -466,11 +489,15 @@ class _BookSourceReaderPageState extends State<BookSourceReaderPage>
     });
     try {
       final results = await Future.wait<Object?>([
-        _client.getChapters(widget.source, widget.book.id),
-        widget.progressStore.load(
-          sourceId: widget.source.id,
-          bookId: widget.book.id,
-        ),
+        widget.initialSwitch == null
+            ? _client.getChapters(widget.source, widget.book.id)
+            : Future.value(widget.initialSwitch!.chapters),
+        widget.initialSwitch == null
+            ? widget.progressStore.load(
+                sourceId: widget.source.id,
+                bookId: widget.book.id,
+              )
+            : Future.value(widget.initialSwitch!.progress),
         _readerSettingsStore.load(),
         _readerSettingsStore.loadScrollByChapter(),
         _customThemeStore.loadAll(),
@@ -512,6 +539,10 @@ class _BookSourceReaderPageState extends State<BookSourceReaderPage>
         _navigationChapters = navigationChapters;
         _chapterIndex = initialIndex;
         _fontSize = settings.fontSize;
+        _textBrightness = settings.textBrightness;
+        _dimNightText = settings.dimNightText;
+        _fontWeight = settings.fontWeight;
+        _showChapterProgress = settings.showChapterProgress;
         _horizontalMargin = settings.horizontalMargin;
         _topMargin = settings.topMargin;
         _bottomMargin = settings.bottomMargin;
@@ -532,6 +563,14 @@ class _BookSourceReaderPageState extends State<BookSourceReaderPage>
       unawaited(_syncVolumeKeyPaging());
       if (chapters.isNotEmpty) {
         unawaited(_resolveShelfBook());
+        final prepared = widget.initialSwitch;
+        if (prepared != null) {
+          _prefetchedContent[initialIndex] = prepared.content;
+          _readableChapterText[initialIndex] = readableBookSourceChapterText(
+            prepared.content,
+            fallbackTitle: chapters[initialIndex].title,
+          );
+        }
         await _loadChapter(
           initialIndex,
           restoreProgress: saved?.chapterProgress ?? 0,
@@ -606,7 +645,9 @@ class _BookSourceReaderPageState extends State<BookSourceReaderPage>
   }
 
   Future<void> _saveProgress() {
-    if (_chapters.isEmpty || _chapterIndex >= _chapters.length) {
+    if (_switchingReader ||
+        _chapters.isEmpty ||
+        _chapterIndex >= _chapters.length) {
       return Future<void>.value();
     }
     final chapterIndex = _chapterIndex;
@@ -1991,6 +2032,18 @@ class _BookSourceReaderPageState extends State<BookSourceReaderPage>
         bottomMarginLabel: context.l10n.readerBottomMarginLabel,
         themeId: _readerThemeId,
         fontSize: _fontSize,
+        textBrightness: _textBrightness,
+        dimNightText: _dimNightText,
+        fontWeight: _fontWeight,
+        showChapterProgress: _showChapterProgress,
+        onTextBrightnessChanged: (value) =>
+            unawaited(_setTextAppearance(brightness: value)),
+        onDimNightTextChanged: (value) =>
+            unawaited(_setTextAppearance(dimNight: value)),
+        onFontWeightChanged: (value) =>
+            unawaited(_setTextAppearance(weight: value)),
+        onChapterProgressChanged: (value) =>
+            unawaited(_setTextAppearance(chapterProgress: value)),
         lineHeight: _lineHeight,
         letterSpacing: _letterSpacing,
         textAlignment: _textAlignment,
@@ -2043,6 +2096,105 @@ class _BookSourceReaderPageState extends State<BookSourceReaderPage>
     await WidgetsBinding.instance.endOfFrame;
     if (!mounted) return;
     await _updateReadingSettings(pageMode: selectedMode);
+  }
+
+  Future<void> _showBookSettings() async {
+    _controlsTimer?.cancel();
+    await _readerAloudController?.stop();
+    if (!mounted) return;
+    final action = await Navigator.of(context).push<SourceBookSettingAction>(
+      MaterialPageRoute(
+        builder: (_) => SourceBookSettingsPage(
+          source: widget.source,
+          book: widget.book,
+          chapterCount: _chapters.length,
+          latestChapter: _chapters.lastOrNull?.title ?? '',
+        ),
+      ),
+    );
+    if (!mounted) return;
+    if (action == SourceBookSettingAction.changeSource) {
+      await _changeBookSource();
+    }
+    if (action == SourceBookSettingAction.readingSettings) {
+      await _showReadingSettings();
+    }
+    if (mounted && !_switchingReader) await _applyReaderSystemUi();
+  }
+
+  Future<void> _changeBookSource() async {
+    if (_changingSource || _chapters.isEmpty) return;
+    try {
+      final sources = await BookSourceRegistry().load();
+      if (!mounted) return;
+      final selected = await Navigator.of(context).push<SourcedBook>(
+        MaterialPageRoute(
+          builder: (_) => SourceSearchPage(
+            sources: sources,
+            client: _client,
+            shelfService: _shelfService,
+            initialBook: SourcedBook(source: widget.source, book: widget.book),
+            onBookSelected: (book) => Navigator.of(context).pop(book),
+          ),
+        ),
+      );
+      if (selected == null || !mounted) return;
+      setState(() => _changingSource = true);
+      final plan = await prepareBookSourceSwitch(
+        client: _client,
+        source: selected.source,
+        book: selected.book,
+        chapterTitle: _chapters[_chapterIndex].title,
+        chapterIndex: _chapterIndex,
+        chapterProgress: _currentReadingProgress,
+      );
+      if (!mounted) return;
+      _progressSaveTimer?.cancel();
+      await _resolveShelfBook();
+      await _saveProgress();
+      if (!mounted) return;
+      await widget.progressStore.save(
+        sourceId: selected.source.id,
+        bookId: selected.book.id,
+        progress: plan.progress,
+      );
+      final shelfId = _shelfBookId;
+      if (shelfId != null) {
+        await _shelfService.replaceOnlineSource(
+          shelfBookId: shelfId,
+          source: selected.source,
+          book: selected.book,
+          chapterIndex: plan.progress.chapterIndex,
+          chapterCount: plan.chapters.length,
+          chapterProgress: plan.progress.chapterProgress,
+        );
+      }
+      if (!mounted) return;
+      _switchingReader = true;
+      unawaited(
+        Navigator.of(context).pushReplacement<void, void>(
+          MaterialPageRoute(
+            builder: (_) => BookSourceReaderPage(
+              source: selected.source,
+              book: selected.book,
+              client: _client,
+              progressStore: widget.progressStore,
+              shelfService: _shelfService,
+              initialTheme: _readerTheme,
+              initialSwitch: plan,
+            ),
+          ),
+        ),
+      );
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('换源失败，仍保留原书源：$error')));
+      }
+    } finally {
+      if (mounted) setState(() => _changingSource = false);
+    }
   }
 
   Future<void> _showCustomThemeEditor() async {
@@ -2239,6 +2391,14 @@ class _BookSourceReaderPageState extends State<BookSourceReaderPage>
                           : () => unawaited(_showAskAiPanel()),
                       askAiTooltip: context.l10n.readerAskAi,
                       onSettings: _showReadingSettings,
+                      onMore: _showBookSettings,
+                      chapterProgressAbovePageNumber: _shouldUseTwoPageLayout(
+                        MediaQuery.sizeOf(context),
+                      ),
+                      chapterProgressLabel:
+                          _showChapterProgress && _chapters.isNotEmpty
+                          ? '${_chapterIndex + 1}/${_chapters.length}章'
+                          : null,
                       backTooltip: MaterialLocalizations.of(
                         context,
                       ).backButtonTooltip,
@@ -2253,6 +2413,13 @@ class _BookSourceReaderPageState extends State<BookSourceReaderPage>
                       bottomKey: const ValueKey('book-source-bottom-controls'),
                       statusKey: const ValueKey('book-source-reader-status'),
                     ),
+                    if (_changingSource) ...[
+                      const ModalBarrier(
+                        dismissible: false,
+                        color: Colors.black26,
+                      ),
+                      const Center(child: CircularProgressIndicator()),
+                    ],
                     if (_tapZoneEditorVisible)
                       Positioned.fill(
                         child: ReaderTapZoneEditorOverlay(
@@ -2431,6 +2598,31 @@ class _BookSourceReaderPageState extends State<BookSourceReaderPage>
     );
   }
 
+  Future<void> _setTextAppearance({
+    double? brightness,
+    bool? dimNight,
+    int? weight,
+    bool? chapterProgress,
+  }) async {
+    final next = _readerSettings.copyWith(
+      textBrightness: brightness,
+      dimNightText: dimNight,
+      fontWeight: weight,
+      showChapterProgress: chapterProgress,
+    );
+    setState(() {
+      _textBrightness = next.textBrightness;
+      _dimNightText = next.dimNightText;
+      _fontWeight = next.fontWeight;
+      _showChapterProgress = next.showChapterProgress;
+    });
+    if (weight != null) {
+      await _updateReadingSettings(fontSize: _fontSize);
+    } else {
+      await _readerSettingsStore.save(_readerSettings);
+    }
+  }
+
   TextStyle get _bodyTextStyle => TextStyle(
     inherit: false,
     fontFamily: _readerFont.family,
@@ -2439,7 +2631,8 @@ class _BookSourceReaderPageState extends State<BookSourceReaderPage>
       configuredFallbacks: _readerFont.fallbackFamilies,
       locale: Localizations.maybeLocaleOf(context),
     ),
-    color: _readerTheme.text,
+    color: readerBodyTextColor(_readerTheme, _textBrightness, _dimNightText),
+    fontWeight: FontWeight.values[_fontWeight ~/ 100 - 1],
     fontSize: _fontSize,
     height: _lineHeight,
     letterSpacing: _letterSpacing,
@@ -2601,7 +2794,7 @@ class _BookSourceReaderPageState extends State<BookSourceReaderPage>
       firstLineIndent: _firstLineIndent,
       paragraphSpacing: _paragraphSpacing,
       textDirection: direction,
-      extra: '${chrome.paginationSignature}:${_readerFont.id}',
+      extra: '${chrome.paginationSignature}:${_readerFont.id}:$_fontWeight',
     ).cacheKey('book-source-vertical-v2');
     final cached = _verticalLayouts[chapterIndex];
     if (cached?.fingerprint == fingerprint) return cached!;
@@ -3018,7 +3211,7 @@ class _BookSourceReaderPageState extends State<BookSourceReaderPage>
           '${viewport.height.toStringAsFixed(1)}:'
           '${_fontSize.toStringAsFixed(1)}:${_lineHeight.toStringAsFixed(2)}:'
           '${_letterSpacing.toStringAsFixed(1)}:${_textAlignment.name}:'
-          '$_firstLineIndent:$_paragraphSpacing:${_readerFont.id}:'
+          '$_firstLineIndent:$_paragraphSpacing:${_readerFont.id}:$_fontWeight:'
           '${_verticalChrome.paginationSignature}',
         ),
         itemScrollController: _verticalChapterScrollController,
@@ -3061,7 +3254,8 @@ class _BookSourceReaderPageState extends State<BookSourceReaderPage>
       firstLineIndent: _firstLineIndent,
       paragraphSpacing: _paragraphSpacing,
       textDirection: Directionality.of(context),
-      extra: '${_readerSafeArea.paginationSignature}:${_readerFont.id}',
+      extra:
+          '${_readerSafeArea.paginationSignature}:${_readerFont.id}:$_fontWeight',
     ).cacheKey('book-source-line-v5');
     final cached = _pagedLayouts[chapterIndex];
     if (cached?.fingerprint == key) return cached!;

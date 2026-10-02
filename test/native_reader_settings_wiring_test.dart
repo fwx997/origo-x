@@ -13,6 +13,7 @@ import 'package:xxread/l10n/app_localizations.dart';
 import 'package:xxread/models/book.dart';
 import 'package:xxread/pages/reader/native_reader_page.dart';
 import 'package:xxread/widgets/reader_paper_page_leaf.dart';
+import 'package:xxread/widgets/reader_annotated_text_page.dart';
 import 'package:xxread/widgets/reader_shader_page_curl.dart';
 import 'package:xxread/widgets/reader_top_information_bar.dart';
 
@@ -92,6 +93,16 @@ void main() {
 
         await tester.tap(find.text('Text'));
         await tester.pumpAndSettle();
+        await _changeAppearance(tester, 'reader-text-brightness', 0.5);
+        await _changeAppearance(tester, 'reader-font-weight', 700);
+        final bodies = tester.widgetList<ReaderAnnotatedTextPage>(
+          find.byType(ReaderAnnotatedTextPage, skipOffstage: false),
+        );
+        expect(bodies, isNotEmpty);
+        for (final body in bodies) {
+          expect(body.bodyStyle.fontWeight, FontWeight.w700);
+          expect(body.bodyStyle.color?.a, closeTo(0.5, 0.01));
+        }
         await tester.ensureVisible(
           find.byKey(const ValueKey('reader-advanced-typography-tile')),
         );
@@ -140,6 +151,8 @@ void main() {
         await tester.pumpAndSettle();
 
         final prefs = await SharedPreferences.getInstance();
+        expect(prefs.getDouble(ReaderSettingsStore.textBrightnessKey), 0.5);
+        expect(prefs.getInt(ReaderSettingsStore.fontWeightKey), 700);
         expect(prefs.getInt(ReaderSettingsStore.firstLineIndentKey), 4);
         expect(prefs.getInt(ReaderSettingsStore.paragraphSpacingKey), 2);
         expect(prefs.getDouble(ReaderSettingsStore.letterSpacingKey), 0.8);
@@ -620,6 +633,22 @@ void main() {
       }
     },
   );
+}
+
+Future<void> _changeAppearance(
+  WidgetTester tester,
+  String key,
+  double value,
+) async {
+  final control = find.byKey(ValueKey(key));
+  await tester.ensureVisible(control);
+  await tester.pumpAndSettle();
+  final slider = tester.widget<Slider>(
+    find.descendant(of: control, matching: find.byType(Slider)),
+  );
+  slider.onChanged!(value);
+  slider.onChangeEnd!(value);
+  await tester.pumpAndSettle();
 }
 
 Widget _buildTabletNativeReader(File tabletBook) => MaterialApp(

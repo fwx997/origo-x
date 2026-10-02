@@ -46,6 +46,14 @@ class ReaderSettingsSheet extends StatefulWidget {
     this.txtChapterTitlePageHint,
     required this.themeId,
     required this.fontSize,
+    this.textBrightness = 1,
+    this.dimNightText = true,
+    this.fontWeight = 400,
+    this.showChapterProgress = true,
+    this.onTextBrightnessChanged,
+    this.onDimNightTextChanged,
+    this.onFontWeightChanged,
+    this.onChapterProgressChanged,
     required this.lineHeight,
     required this.letterSpacing,
     required this.textAlignment,
@@ -114,6 +122,14 @@ class ReaderSettingsSheet extends StatefulWidget {
   final String? txtChapterTitlePageHint;
   final String themeId;
   final double fontSize;
+  final double textBrightness;
+  final bool dimNightText;
+  final int fontWeight;
+  final bool showChapterProgress;
+  final ValueChanged<double>? onTextBrightnessChanged;
+  final ValueChanged<bool>? onDimNightTextChanged;
+  final ValueChanged<int>? onFontWeightChanged;
+  final ValueChanged<bool>? onChapterProgressChanged;
   final double lineHeight;
   final double letterSpacing;
   final ReaderTextAlignment textAlignment;
@@ -153,6 +169,10 @@ class ReaderSettingsSheet extends StatefulWidget {
 class _ReaderSettingsSheetState extends State<ReaderSettingsSheet> {
   late String _themeId = widget.themeId;
   late double _fontSize = widget.fontSize;
+  late double _textBrightness = widget.textBrightness;
+  late bool _dimNightText = widget.dimNightText;
+  late int _fontWeight = widget.fontWeight;
+  late bool _showChapterProgress = widget.showChapterProgress;
   late double _lineHeight = widget.lineHeight;
   late double _letterSpacing = widget.letterSpacing;
   late ReaderTextAlignment _textAlignment = widget.textAlignment;
@@ -231,7 +251,55 @@ class _ReaderSettingsSheetState extends State<ReaderSettingsSheet> {
       onChanged: (value) => setState(() => _fontSize = value),
       onChangeEnd: widget.onFontSizeChanged,
     ),
+    if (widget.onTextBrightnessChanged != null)
+      ReaderSettingSlider(
+        key: const ValueKey('reader-text-brightness'),
+        label: '文字亮度',
+        value: _textBrightness,
+        valueLabel: '${(_textBrightness * 100).round()}%',
+        min: 0.3,
+        max: 1,
+        divisions: 14,
+        onChanged: (value) => setState(() => _textBrightness = value),
+        onChangeEnd: widget.onTextBrightnessChanged!,
+      ),
+    if (widget.onDimNightTextChanged != null)
+      SwitchListTile(
+        key: const ValueKey('reader-dim-night-text'),
+        contentPadding: EdgeInsets.zero,
+        title: const Text('夜间模式降低文字亮度'),
+        subtitle: const Text('夜间模式下文字使用 70% 亮度'),
+        value: _dimNightText,
+        onChanged: (value) {
+          setState(() => _dimNightText = value);
+          widget.onDimNightTextChanged!(value);
+        },
+      ),
+    if (widget.onFontWeightChanged != null) ...[
+      ReaderSettingSlider(
+        key: const ValueKey('reader-font-weight'),
+        label: '字体粗细',
+        value: _fontWeight.toDouble(),
+        valueLabel: '$_fontWeight',
+        min: 300,
+        max: 700,
+        divisions: 4,
+        onChanged: (value) => setState(() => _fontWeight = value.round()),
+        onChangeEnd: (value) => widget.onFontWeightChanged!(value.round()),
+      ),
+      Padding(
+        padding: const EdgeInsets.only(bottom: 16),
+        child: Text(
+          '春风又绿江南岸 · Reading',
+          style: TextStyle(
+            fontSize: _fontSize,
+            fontWeight: FontWeight.values[_fontWeight ~/ 100 - 1],
+          ),
+        ),
+      ),
+    ],
     ReaderSettingSlider(
+      key: const ValueKey('reader-line-height'),
       label: widget.lineHeightLabel,
       value: _lineHeight,
       valueLabel: _lineHeight.toStringAsFixed(1),
@@ -393,6 +461,19 @@ class _ReaderSettingsSheetState extends State<ReaderSettingsSheet> {
       trailing: const Icon(Icons.chevron_right),
       onTap: widget.onTopBarStyleTap,
     ),
+    if (widget.onChapterProgressChanged != null)
+      SwitchListTile(
+        key: const ValueKey('reader-chapter-progress-toggle'),
+        contentPadding: EdgeInsets.zero,
+        secondary: const Icon(Icons.format_list_numbered_rounded),
+        title: const Text('章节进度'),
+        subtitle: const Text('左下角显示当前章 / 总章数'),
+        value: _showChapterProgress,
+        onChanged: (value) {
+          setState(() => _showChapterProgress = value);
+          widget.onChapterProgressChanged!(value);
+        },
+      ),
   ];
 
   List<Widget> _pagingTabChildren() => [

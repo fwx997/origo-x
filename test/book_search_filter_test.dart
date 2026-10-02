@@ -12,6 +12,29 @@ BookSourceBook book(String title, String author) => BookSourceBook(
 );
 
 void main() {
+  test(
+    'relevance prioritizes normalized matches without hiding other books',
+    () {
+      const filter = BookSearchFilter(query: '剑来');
+      expect(filter.relevance(book('《剑 来》', '作者')), 0);
+      expect(filter.relevance(book('别的书', '作者：剑来')), 0);
+      expect(filter.relevance(book('剑来续集', '作者')), 1);
+      expect(filter.relevance(book('别的书', '剑来作者')), 1);
+      expect(filter.relevance(book('别的书', '作者')), 2);
+      expect(filter.accepts(book('别的书', '作者')), isTrue);
+
+      const title = BookSearchFilter(query: '剑来', field: BookSearchField.title);
+      expect(title.relevance(book('别的书', '剑来')), 2);
+      const author = BookSearchFilter(
+        query: '作者：剑来',
+        field: BookSearchField.author,
+      );
+      expect(author.relevance(book('别的书', '剑来')), 0);
+      expect(author.relevance(book('作者：剑来', '其他作者')), 2);
+      expect(const BookSearchFilter(query: '').relevance(book('书', '')), 2);
+    },
+  );
+
   test('original array filters retain key/items/title/value semantics', () {
     final groups = XbsDiscovery.filterGroups([
       {

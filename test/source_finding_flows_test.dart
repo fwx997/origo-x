@@ -19,6 +19,123 @@ import 'package:xxread/pages/book_sources/source_search_page.dart';
 void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
 
+  testWidgets('bottom retry recovers first-page and later-page failures', (
+    tester,
+  ) async {
+    final calls = <String, int>{};
+    final client = _Client()
+      ..searchResult = (source, query, page) async {
+        final key = '${source.name}:$page';
+        calls.update(key, (count) => count + 1, ifAbsent: () => 1);
+        if (key == 'A:1') return _page([_book('a1', 'First page')], more: true);
+        if (calls[key] == 1) throw StateError('Temporary failure');
+        return _page([_book(key, '${source.name} recovered')]);
+      };
+    await _searchPage(tester, client, [_source('A'), _source('B')]);
+    await _search(tester, 'book');
+    if (!calls.containsKey('A:2')) {
+      await tester.drag(find.byType(CustomScrollView), const Offset(0, -800));
+      await tester.pumpAndSettle();
+    }
+    expect(calls, {'A:1': 1, 'B:1': 1, 'A:2': 1});
+    await tester.ensureVisible(
+      find.byKey(const Key('bookSourceLoadMoreButton')),
+    );
+    await tester.tap(find.byKey(const Key('bookSourceLoadMoreButton')));
+    await tester.pumpAndSettle();
+    expect(calls, {'A:1': 1, 'B:1': 2, 'A:2': 2});
+    expect(find.text('First page'), findsOneWidget);
+    expect(find.text('A recovered'), findsOneWidget);
+    expect(find.text('B recovered'), findsOneWidget);
+    expect(find.byKey(const Key('bookSourceSearchFailures')), findsNothing);
+  });
+
+  testWidgets('all failures expose reasons and allow retrying one source', (
+    tester,
+  ) async {
+    final calls = <String, int>{};
+    final client = _Client()
+      ..searchResult = (source, query, page) async {
+        calls.update(source.name, (count) => count + 1, ifAbsent: () => 1);
+        if (source.name == 'A' || calls[source.name] == 1) {
+          throw StateError('Connection timed out');
+        }
+        return _page([_book('found', 'Recovered book')]);
+      };
+    await _searchPage(tester, client, [_source('A'), _source('B')]);
+    await _search(tester, 'book');
+    await tester.tap(find.byKey(const Key('bookSourceSearchFailures')));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Connection timed out'), findsNWidgets(2));
+    await tester.tap(find.byKey(Key('retrySearchSource-${_source('B').id}')));
+    await tester.pumpAndSettle();
+    expect(calls, {'A': 1, 'B': 2});
+    expect(find.text('Recovered book'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('bookSourceRetryFailed')));
+    await tester.pumpAndSettle();
+    expect(calls, {'A': 2, 'B': 2});
+    expect(find.text('Recovered book'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('bookSourceSearchFailures')));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Connection timed out'), findsOneWidget);
+  });
+
+  testWidgets('a failed source does not block loading other sources pages', (
+    tester,
+  ) async {
+    final pages = <int>[];
+    var failures = 0;
+    final client = _Client()
+      ..searchResult = (source, query, page) async {
+        if (source.name == 'B') {
+          failures++;
+          throw StateError('Unavailable');
+        }
+        pages.add(page);
+        return _page([_book('$page', 'Page $page')], more: page < 3);
+      };
+    await _searchPage(tester, client, [_source('A'), _source('B')]);
+    await _search(tester, 'book');
+    expect(pages, [1, 2]);
+    expect(failures, 1);
+    await tester.ensureVisible(
+      find.byKey(const Key('bookSourceLoadMoreButton')),
+    );
+    await tester.tap(find.byKey(const Key('bookSourceLoadMoreButton')));
+    await tester.pumpAndSettle();
+    expect(pages, [1, 2, 3]);
+    expect(failures, 2);
+    expect(find.text('Page 3'), findsOneWidget);
+  });
+
+  testWidgets('a new query cancels a retry and discards its late response', (
+    tester,
+  ) async {
+    final retry = Completer<BookSourceSearchPage>();
+    BookDownloadCancellation? retryToken;
+    var calls = 0;
+    final client = _Client()
+      ..searchResult = (source, query, page) {
+        if (query == 'new') {
+          return Future.value(_page([_book('new', 'New book')]));
+        }
+        if (++calls == 1) return Future.error(StateError('Temporary failure'));
+        retryToken = SourceTaskContext.cancellation;
+        return retry.future;
+      };
+    await _searchPage(tester, client, [_source('A')]);
+    await _search(tester, 'old');
+    await tester.tap(find.byKey(const Key('bookSourceRetryFailed')));
+    await tester.pump();
+    await _search(tester, 'new');
+    expect(retryToken?.isCancelled, isTrue);
+    retry.complete(_page([_book('old', 'Stale book')]));
+    await tester.pumpAndSettle();
+    expect(find.text('New book'), findsOneWidget);
+    expect(find.text('Stale book'), findsNothing);
+    expect(find.byKey(const Key('bookSourceSearchFailures')), findsNothing);
+  });
+
   testWidgets('filtered-out first page can still load a matching second page', (
     tester,
   ) async {

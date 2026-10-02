@@ -31,6 +31,7 @@ import 'package:xxread/core/reader/reader_margin_settings.dart';
 import 'package:xxread/core/reader/reader_aloud_controller.dart';
 import 'package:xxread/core/reader/reader_safe_area.dart';
 import 'package:xxread/core/reader/reader_settings.dart';
+import 'package:xxread/core/reader/reader_text_appearance.dart';
 import 'package:xxread/core/reader/reader_system_ui.dart';
 import 'package:xxread/core/reader/reader_tap_zones.dart';
 import 'package:xxread/core/reader/reader_text_characters.dart';
@@ -237,6 +238,10 @@ class _NativeReaderPageState extends State<NativeReaderPage>
   NativePageMode _pageMode = ReaderSettings.defaultPageMode;
   bool _scrollByChapter = true;
   double _fontSize = 19;
+  double _textBrightness = 1;
+  bool _dimNightText = true;
+  int _fontWeight = 400;
+  bool _showChapterProgress = true;
   double _lineHeight = 1.75;
   double _letterSpacing = ReaderSettings.defaultLetterSpacing;
   ReaderTextAlignment _textAlignment = ReaderSettings.defaultTextAlignment;
@@ -847,6 +852,10 @@ class _NativeReaderPageState extends State<NativeReaderPage>
       setState(() {
         _pageMode = settings.pageMode;
         _fontSize = settings.fontSize;
+        _textBrightness = settings.textBrightness;
+        _dimNightText = settings.dimNightText;
+        _fontWeight = settings.fontWeight;
+        _showChapterProgress = settings.showChapterProgress;
         _lineHeight = settings.lineHeight;
         _letterSpacing = settings.letterSpacing;
         _textAlignment = settings.textAlignment;
@@ -915,6 +924,10 @@ class _NativeReaderPageState extends State<NativeReaderPage>
 
   ReaderSettings get _readerSettings => ReaderSettings(
     fontSize: _fontSize,
+    textBrightness: _textBrightness,
+    dimNightText: _dimNightText,
+    fontWeight: _fontWeight,
+    showChapterProgress: _showChapterProgress,
     lineHeight: _lineHeight,
     letterSpacing: _letterSpacing,
     textAlignment: _textAlignment,
@@ -930,6 +943,31 @@ class _NativeReaderPageState extends State<NativeReaderPage>
     tabletTwoPageEnabled: _tabletTwoPageEnabled,
   );
 
+  Future<void> _setTextAppearance({
+    double? brightness,
+    bool? dimNight,
+    int? weight,
+    bool? chapterProgress,
+  }) async {
+    final next = _readerSettings.copyWith(
+      textBrightness: brightness,
+      dimNightText: dimNight,
+      fontWeight: weight,
+      showChapterProgress: chapterProgress,
+    );
+    setState(() {
+      _textBrightness = next.textBrightness;
+      _dimNightText = next.dimNightText;
+      _fontWeight = next.fontWeight;
+      _showChapterProgress = next.showChapterProgress;
+    });
+    if (weight != null) {
+      await _updateLayout(fontSize: _fontSize);
+    } else {
+      await _readerSettingsStore.save(_readerSettings);
+    }
+  }
+
   TextStyle get _readerTextStyle => TextStyle(
     inherit: false,
     fontFamily: _readerFont.family,
@@ -941,7 +979,8 @@ class _NativeReaderPageState extends State<NativeReaderPage>
     fontSize: _fontSize,
     height: _lineHeight,
     letterSpacing: _letterSpacing,
-    color: _readerTheme.text,
+    color: readerBodyTextColor(_readerTheme, _textBrightness, _dimNightText),
+    fontWeight: FontWeight.values[_fontWeight ~/ 100 - 1],
   );
 
   TextAlign get _readerTextAlign => switch (_textAlignment) {
@@ -1043,6 +1082,9 @@ class _NativeReaderPageState extends State<NativeReaderPage>
         ? _leafStatusController.value.revision
         : 0,
     _annotationRevision,
+    _textBrightness,
+    _dimNightText,
+    _fontWeight,
   );
 
   double get _effectiveTopMargin => _readerSafeArea.contentTop;
@@ -1117,7 +1159,7 @@ class _NativeReaderPageState extends State<NativeReaderPage>
       '${_horizontalMargin.toStringAsFixed(1)}:'
       '${_topMargin.toStringAsFixed(1)}:'
       '${_bottomMargin.toStringAsFixed(1)}:${_pageMode.name}:'
-      '$_firstLineIndent:$_paragraphSpacing:${_readerFont.id}:'
+      '$_firstLineIndent:$_paragraphSpacing:${_readerFont.id}:$_fontWeight:'
       '${widget.book.format.toLowerCase() == 'txt' ? _txtChapterTitlePageEnabled : true}';
 
   Future<void> _setTopBarStyle(ReaderTopBarStyle style) async {
@@ -2074,6 +2116,18 @@ class _NativeReaderPageState extends State<NativeReaderPage>
             : null,
         themeId: _readerThemeId,
         fontSize: _fontSize,
+        textBrightness: _textBrightness,
+        dimNightText: _dimNightText,
+        fontWeight: _fontWeight,
+        showChapterProgress: _showChapterProgress,
+        onTextBrightnessChanged: (value) =>
+            unawaited(_setTextAppearance(brightness: value)),
+        onDimNightTextChanged: (value) =>
+            unawaited(_setTextAppearance(dimNight: value)),
+        onFontWeightChanged: (value) =>
+            unawaited(_setTextAppearance(weight: value)),
+        onChapterProgressChanged: (value) =>
+            unawaited(_setTextAppearance(chapterProgress: value)),
         lineHeight: _lineHeight,
         letterSpacing: _letterSpacing,
         textAlignment: _textAlignment,
@@ -2734,7 +2788,7 @@ class _NativeReaderPageState extends State<NativeReaderPage>
     textDirection: direction,
     extra:
         '${_pageMode == NativePageMode.verticalScroll ? _verticalChrome.paginationSignature : _readerSafeArea.paginationSignature}:'
-        '${_readerFont.id}:'
+        '${_readerFont.id}:$_fontWeight:'
         '${widget.book.format.toLowerCase() == 'txt' ? _txtChapterTitlePageEnabled : true}',
   ).cacheKey('native-line-v7');
 
@@ -4314,6 +4368,13 @@ class _NativeReaderPageState extends State<NativeReaderPage>
               onBookmark: null,
               onTableOfContents: null,
               onSettings: _readerSettingsLoaded ? _showReadingSettings : () {},
+              chapterProgressLabel:
+                  _showChapterProgress && _loadedChapters.isNotEmpty
+                  ? '${_chapterIndex + 1}/${_loadedChapters.length}章'
+                  : null,
+              chapterProgressAbovePageNumber: _usesTwoPageLayout(
+                MediaQuery.sizeOf(context),
+              ),
               backTooltip: MaterialLocalizations.of(context).backButtonTooltip,
               bookmarkTooltip: context.l10n.readerAddBookmark,
               tableOfContentsTooltip: context.l10n.readerToolbarTOC,
@@ -4782,6 +4843,15 @@ class _NativeReaderPageState extends State<NativeReaderPage>
                                 ),
                                 askAiTooltip: context.l10n.readerAskAi,
                                 onSettings: _showReadingSettings,
+                                chapterProgressLabel:
+                                    _showChapterProgress &&
+                                        _loadedChapters.isNotEmpty
+                                    ? '${_chapterIndex + 1}/${_loadedChapters.length}章'
+                                    : null,
+                                chapterProgressAbovePageNumber:
+                                    _usesTwoPageLayout(
+                                      MediaQuery.sizeOf(context),
+                                    ),
                                 backTooltip: MaterialLocalizations.of(
                                   context,
                                 ).backButtonTooltip,

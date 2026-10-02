@@ -44,6 +44,9 @@ class ReaderChromeOverlay extends StatelessWidget {
     this.viewportStatusAlignment = Alignment.centerRight,
     this.viewportStatusHorizontalPadding = 14,
     this.showSettingsAction = true,
+    this.onMore,
+    this.chapterProgressLabel,
+    this.chapterProgressAbovePageNumber = false,
   });
 
   final ReaderThemePalette palette;
@@ -77,6 +80,9 @@ class ReaderChromeOverlay extends StatelessWidget {
   final AlignmentGeometry viewportStatusAlignment;
   final double viewportStatusHorizontalPadding;
   final bool showSettingsAction;
+  final VoidCallback? onMore;
+  final String? chapterProgressLabel;
+  final bool chapterProgressAbovePageNumber;
 
   @override
   Widget build(BuildContext context) {
@@ -84,6 +90,22 @@ class ReaderChromeOverlay extends StatelessWidget {
     return Stack(
       fit: StackFit.expand,
       children: [
+        if (chapterProgressLabel != null && !visible)
+          Positioned(
+            left: 24,
+            bottom: statusBottom + (chapterProgressAbovePageNumber ? 16 : 0),
+            child: IgnorePointer(
+              child: Text(
+                chapterProgressLabel!,
+                key: const ValueKey('reader-chapter-progress'),
+                style: textTheme.labelSmall?.copyWith(
+                  fontSize: 10,
+                  height: 1,
+                  color: palette.secondaryText.withValues(alpha: 0.66),
+                ),
+              ),
+            ),
+          ),
         if (showViewportTitle)
           Positioned(
             left: 30,
@@ -194,6 +216,14 @@ class ReaderChromeOverlay extends StatelessWidget {
                             ? Icons.bookmark_rounded
                             : Icons.bookmark_border_rounded,
                       ),
+                      if (onMore != null)
+                        ReaderControlIconButton(
+                          key: const ValueKey('reader-book-settings'),
+                          palette: palette,
+                          onPressed: onMore,
+                          tooltip: '书籍设置',
+                          icon: Icons.more_horiz_rounded,
+                        ),
                     ],
                   ),
                 ),

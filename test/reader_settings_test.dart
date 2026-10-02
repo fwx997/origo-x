@@ -4,6 +4,31 @@ import 'package:xxread/core/reader/reader_layout.dart';
 import 'package:xxread/core/reader/reader_settings.dart';
 
 void main() {
+  test(
+    'text appearance and chapter progress persist with safe bounds',
+    () async {
+      SharedPreferences.setMockInitialValues({});
+      const store = ReaderSettingsStore();
+      final settings = (await store.load()).copyWith(
+        textBrightness: 0.55,
+        dimNightText: false,
+        fontWeight: 600,
+        showChapterProgress: false,
+      );
+      await store.save(settings);
+      final loaded = await store.load();
+      expect(loaded.textBrightness, 0.55);
+      expect(loaded.dimNightText, isFalse);
+      expect(loaded.fontWeight, 600);
+      expect(loaded.showChapterProgress, isFalse);
+      expect(
+        settings.copyWith(fontWeight: 999, textBrightness: -2).fontWeight,
+        700,
+      );
+      expect(settings.copyWith(textBrightness: -2).textBrightness, 0.3);
+    },
+  );
+
   test('defaults page turning to horizontal slide', () async {
     SharedPreferences.setMockInitialValues({});
 

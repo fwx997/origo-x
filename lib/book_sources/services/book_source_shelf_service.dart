@@ -91,6 +91,38 @@ class BookSourceShelfService {
     await _bookDao.updateBookTotalPages(shelfBookId, totalUnits);
   }
 
+  Future<void> replaceOnlineSource({
+    required int shelfBookId,
+    required RegisteredBookSource source,
+    required BookSourceBook book,
+    required int chapterIndex,
+    required int chapterCount,
+    required double chapterProgress,
+  }) async {
+    final current = await _bookDao.getBookById(shelfBookId);
+    if (current == null || !current.isOnline) {
+      throw StateError('当前在线书架记录不存在');
+    }
+    final units =
+        chapterIndex * unitsPerChapter +
+        (chapterProgress.clamp(0, 1) * unitsPerChapter).round();
+    final total = chapterCount * unitsPerChapter;
+    await _bookDao.updateBook(
+      current.copyWith(
+        title: book.title,
+        author: book.author,
+        sourceId: source.id,
+        sourceBookId: book.id,
+        sourceJson: jsonEncode(source.toJson()),
+        sourceBookJson: jsonEncode(book.toJson()),
+        currentPage: units,
+        totalPages: total,
+        readingProgress: total == 0 ? 0 : units / total,
+      ),
+    );
+    LibraryEventBus().notifyLibraryChanged();
+  }
+
   Future<Book> downloadToLocal({
     required RegisteredBookSource source,
     required BookSourceBook book,

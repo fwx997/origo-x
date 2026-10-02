@@ -228,10 +228,14 @@ void main() {
     // 字号与行距滑杆在「文字」页签里。
     await tester.tap(find.text('文字'));
     await tester.pumpAndSettle();
-    final sliders = tester.widgetList<Slider>(find.byType(Slider)).toList();
-    expect(sliders.length, greaterThanOrEqualTo(2));
-    sliders[1].onChanged!(2.1);
-    sliders[1].onChangeEnd!(2.1);
+    final slider = tester.widget<Slider>(
+      find.descendant(
+        of: find.byKey(const ValueKey('reader-line-height')),
+        matching: find.byType(Slider),
+      ),
+    );
+    slider.onChanged!(2.1);
+    slider.onChangeEnd!(2.1);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 250));
 

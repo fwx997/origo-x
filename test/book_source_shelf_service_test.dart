@@ -16,6 +16,39 @@ import 'package:xxread/services/books/book_dao.dart';
 
 void main() {
   test(
+    'changing source updates the existing shelf identity and progress',
+    () async {
+      final original = Book(
+        id: 7,
+        title: '测试书籍',
+        author: '作者',
+        filePath: '',
+        format: 'source',
+        storageType: 'online',
+        sourceId: 'old',
+        sourceBookId: 'old-book',
+      );
+      final dao = _MemoryBookDao()..stored = original;
+      final service = BookSourceShelfService(bookDao: dao);
+      await service.replaceOnlineSource(
+        shelfBookId: 7,
+        source: _source,
+        book: _sourceBook,
+        chapterIndex: 9,
+        chapterCount: 100,
+        chapterProgress: 0.5,
+      );
+      expect(dao.stored!.id, 7);
+      expect(dao.stored!.sourceId, _source.id);
+      expect(dao.stored!.sourceBookId, _sourceBook.id);
+      expect(dao.stored!.currentPage, 9500);
+      expect(dao.stored!.totalPages, 100000);
+      expect(dao.stored!.importDate, original.importDate);
+      expect(dao.insertCount, 0);
+    },
+  );
+
+  test(
     'adds a source book as an online shelf record without a local file',
     () async {
       final directory = await Directory.systemTemp.createTemp('source-shelf-');
@@ -268,6 +301,14 @@ final _sourceBookWithCover = BookSourceBook(
 class _MemoryBookDao extends BookDao {
   Book? stored;
   int insertCount = 0;
+
+  @override
+  Future<Book?> getBookById(int id) async => stored?.id == id ? stored : null;
+
+  @override
+  Future<void> updateBook(Book book) async {
+    stored = book;
+  }
 
   @override
   Future<Book?> getBookBySource({

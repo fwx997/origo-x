@@ -25,6 +25,10 @@ class ReaderSettings {
 
   const ReaderSettings({
     required this.fontSize,
+    this.textBrightness = 1,
+    this.dimNightText = true,
+    this.fontWeight = 400,
+    this.showChapterProgress = true,
     required this.lineHeight,
     this.letterSpacing = defaultLetterSpacing,
     this.textAlignment = defaultTextAlignment,
@@ -41,6 +45,10 @@ class ReaderSettings {
   });
 
   final double fontSize;
+  final double textBrightness;
+  final bool dimNightText;
+  final int fontWeight;
+  final bool showChapterProgress;
   final double lineHeight;
   final double letterSpacing;
   final ReaderTextAlignment textAlignment;
@@ -57,6 +65,10 @@ class ReaderSettings {
 
   ReaderSettings copyWith({
     double? fontSize,
+    double? textBrightness,
+    bool? dimNightText,
+    int? fontWeight,
+    bool? showChapterProgress,
     double? lineHeight,
     double? letterSpacing,
     ReaderTextAlignment? textAlignment,
@@ -73,6 +85,11 @@ class ReaderSettings {
   }) {
     return ReaderSettings(
       fontSize: (fontSize ?? this.fontSize).clamp(14, 32),
+      textBrightness: (textBrightness ?? this.textBrightness).clamp(0.3, 1),
+      dimNightText: dimNightText ?? this.dimNightText,
+      fontWeight:
+          ((fontWeight ?? this.fontWeight) / 100).round().clamp(3, 7) * 100,
+      showChapterProgress: showChapterProgress ?? this.showChapterProgress,
       lineHeight: (lineHeight ?? this.lineHeight).clamp(1.4, 2.1),
       letterSpacing: (letterSpacing ?? this.letterSpacing).clamp(
         minLetterSpacing,
@@ -105,6 +122,10 @@ class ReaderSettings {
 
 class ReaderSettingsStore {
   static const fontSizeKey = 'native_reader_font_size';
+  static const textBrightnessKey = 'reader_text_brightness';
+  static const dimNightTextKey = 'reader_dim_night_text';
+  static const fontWeightKey = 'reader_font_weight';
+  static const chapterProgressKey = 'reader_chapter_progress';
   static const lineHeightKey = 'native_reader_line_height';
   static const letterSpacingKey = 'native_reader_letter_spacing';
   static const textAlignmentKey = 'native_reader_text_alignment';
@@ -157,6 +178,12 @@ class ReaderSettingsStore {
     return ReaderSettings(
       fontSize: (prefs.getDouble(fontSizeKey) ?? ReaderSettings.defaultFontSize)
           .clamp(14, 32),
+      textBrightness: (prefs.getDouble(textBrightnessKey) ?? 1).clamp(0.3, 1),
+      dimNightText: prefs.getBool(dimNightTextKey) ?? true,
+      fontWeight:
+          ((prefs.getInt(fontWeightKey) ?? 400) / 100).round().clamp(3, 7) *
+          100,
+      showChapterProgress: prefs.getBool(chapterProgressKey) ?? true,
       lineHeight:
           (prefs.getDouble(lineHeightKey) ??
                   prefs.getDouble(legacyBookSourceLineHeightKey) ??
@@ -207,6 +234,10 @@ class ReaderSettingsStore {
     final prefs = await SharedPreferences.getInstance();
     await Future.wait([
       prefs.setDouble(fontSizeKey, settings.fontSize),
+      prefs.setDouble(textBrightnessKey, settings.textBrightness),
+      prefs.setBool(dimNightTextKey, settings.dimNightText),
+      prefs.setInt(fontWeightKey, settings.fontWeight),
+      prefs.setBool(chapterProgressKey, settings.showChapterProgress),
       prefs.setDouble(lineHeightKey, settings.lineHeight),
       prefs.setDouble(letterSpacingKey, settings.letterSpacing),
       prefs.setString(textAlignmentKey, settings.textAlignment.name),

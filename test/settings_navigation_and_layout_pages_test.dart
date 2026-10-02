@@ -8,6 +8,7 @@ import 'package:xxread/l10n/app_localizations.dart';
 import 'package:xxread/models/home_navigation_destination.dart';
 import 'package:xxread/pages/settings/floating_navigation_settings_page.dart';
 import 'package:xxread/pages/settings/library_layout_settings_page.dart';
+import 'package:xxread/pages/settings/preferences_page.dart';
 import 'package:xxread/services/core/app_settings_service.dart';
 import 'package:xxread/utils/page_transitions.dart';
 
@@ -55,12 +56,15 @@ void main() {
     addTearDown(settings.dispose);
 
     await tester.pumpWidget(
-      _testApp(
-        settings: settings,
-        home: const FloatingNavigationSettingsPage(),
-      ),
+      _testApp(settings: settings, home: const PreferencesPage()),
     );
     await tester.pump();
+
+    await tester.tap(
+      find.byKey(const ValueKey('preferences-floating-navigation')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byType(FloatingNavigationSettingsPage), findsOneWidget);
 
     final preview = find.byKey(
       const ValueKey('floating-navigation-live-preview'),

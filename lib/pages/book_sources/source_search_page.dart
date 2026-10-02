@@ -27,6 +27,7 @@ class SourceSearchPage extends StatefulWidget {
   final BookSourceShelfService shelfService;
   final SourcedBook? initialBook;
   final String? initialSourceId;
+  final ValueChanged<SourcedBook>? onBookSelected;
 
   const SourceSearchPage({
     super.key,
@@ -35,6 +36,7 @@ class SourceSearchPage extends StatefulWidget {
     required this.shelfService,
     this.initialBook,
     this.initialSourceId,
+    this.onBookSelected,
   });
 
   /// 解析实际参与搜索的书源集合；发现页与测试也复用这份规则。
@@ -77,8 +79,7 @@ class _SourceSearchPageState extends State<SourceSearchPage> {
   bool _searching = false;
   bool _hasSearched = false;
   bool _loadingMore = false;
-  bool _loadMoreFailed = false;
-  int _failedSourceCount = 0;
+  Map<String, _SearchBatch> _failedSearches = const {};
   String _activeQuery = '';
   int _searchGeneration = 0;
   BookDownloadCancellation _cancellation = BookDownloadCancellation();
@@ -87,6 +88,8 @@ class _SourceSearchPageState extends State<SourceSearchPage> {
   int _totalSources = 0;
 
   bool get _hasMore => _pageStates.values.any((state) => state.hasMore);
+  bool get _loadMoreFailed =>
+      _failedSearches.values.any((batch) => batch.page > 1);
 
   @override
   void initState() {
@@ -164,14 +167,13 @@ class _SourceSearchPageState extends State<SourceSearchPage> {
       }
       _searching = true;
       _hasSearched = true;
-      _failedSourceCount = 0;
+      _failedSearches = const {};
       _completedSources = 0;
       _totalSources = targetSources.length;
       _activeQuery = query;
       _results = const [];
       _pageStates = const {};
       _loadingMore = false;
-      _loadMoreFailed = false;
     });
 
     await Future.wait(
@@ -193,13 +195,18 @@ class _SourceSearchPageState extends State<SourceSearchPage> {
     WidgetsBinding.instance.addPostFrameCallback((_) => _handleScroll());
   }
 
-  Future<void> _loadMore() async {
+  Future<void> _loadMore({bool retryFailed = false}) async {
     if (_searching || _loadingMore || !_hasSearched || _activeQuery.isEmpty) {
       return;
     }
-    final targets = _pageStates.values
-        .where((state) => state.hasMore)
-        .toList(growable: false);
+    final targets = {
+      for (final state in _pageStates.values)
+        if (state.hasMore && !_failedSearches.containsKey(state.source.id))
+          state.source.id: (source: state.source, page: state.page + 1),
+      if (retryFailed)
+        for (final batch in _failedSearches.values)
+          batch.source.id: (source: batch.source, page: batch.page),
+    }.values.toList(growable: false);
     if (targets.isEmpty) return;
 
     final query = _activeQuery;
@@ -208,7 +215,6 @@ class _SourceSearchPageState extends State<SourceSearchPage> {
     final cancellation = _cancellation;
     setState(() {
       _loadingMore = true;
-      _loadMoreFailed = false;
     });
 
     await Future.wait(
@@ -218,7 +224,7 @@ class _SourceSearchPageState extends State<SourceSearchPage> {
           cancellation,
           state.source,
           query,
-          state.page + 1,
+          state.page,
           generation,
           initial: false,
         ),
@@ -229,6 +235,39 @@ class _SourceSearchPageState extends State<SourceSearchPage> {
       return;
     }
     setState(() => _loadingMore = false);
+  }
+
+  Future<void> _retryFailedSources([String? sourceId]) async {
+    if (_searching || _loadingMore || _activeQuery.isEmpty) return;
+    final targets = _failedSearches.values
+        .where((batch) => sourceId == null || batch.source.id == sourceId)
+        .toList(growable: false);
+    if (targets.isEmpty) return;
+    final generation = _searchGeneration;
+    final query = _activeQuery;
+    if (_cancellation.isCancelled) _cancellation = BookDownloadCancellation();
+    final cancellation = _cancellation;
+    final pool = _searchPool = SourceTaskPool(perHost: 12);
+    setState(() {
+      _searching = true;
+      _completedSources = 0;
+      _totalSources = targets.length;
+    });
+    await Future.wait(
+      targets.map(
+        (batch) => _scheduleSearch(
+          pool,
+          cancellation,
+          batch.source,
+          query,
+          batch.page,
+          generation,
+          initial: true,
+        ),
+      ),
+    );
+    if (!mounted || generation != _searchGeneration) return;
+    setState(() => _searching = false);
   }
 
   Future<void> _scheduleSearch(
@@ -265,8 +304,13 @@ class _SourceSearchPageState extends State<SourceSearchPage> {
         page: pageNumber,
         hasMore: page.hasMore && page.items.isNotEmpty,
       );
-    } catch (_) {
-      return _SearchBatch(source: source, items: const [], failed: true);
+    } catch (error) {
+      return _SearchBatch(
+        source: source,
+        items: const [],
+        page: pageNumber,
+        error: error.toString(),
+      );
     }
   }
 
@@ -283,10 +327,10 @@ class _SourceSearchPageState extends State<SourceSearchPage> {
     setState(() {
       if (initial) _completedSources++;
       if (batch.failed) {
-        if (initial) _failedSourceCount++;
-        if (!initial) _loadMoreFailed = true;
+        _failedSearches = {..._failedSearches, batch.source.id: batch};
         return;
       }
+      _failedSearches = {..._failedSearches}..remove(batch.source.id);
       final seen = _results
           .map((item) => '${item.source.id}\n${item.book.id}')
           .toSet();
@@ -323,11 +367,10 @@ class _SourceSearchPageState extends State<SourceSearchPage> {
       _results = const [];
       _pageStates = const {};
       _hasSearched = false;
-      _failedSourceCount = 0;
+      _failedSearches = const {};
       _activeQuery = '';
       _searching = false;
       _loadingMore = false;
-      _loadMoreFailed = false;
     });
     _queryFocus.requestFocus();
   }
@@ -491,7 +534,6 @@ class _SourceSearchPageState extends State<SourceSearchPage> {
   }
 
   Widget _buildBody(List<RegisteredBookSource> enabledSources) {
-    final scheme = Theme.of(context).colorScheme;
     final groups = _groupResults();
     if (enabledSources.isEmpty) {
       return _buildMessage(
@@ -506,13 +548,14 @@ class _SourceSearchPageState extends State<SourceSearchPage> {
     if (!_hasSearched) {
       return _buildHistory();
     }
-    if (groups.isEmpty && !_hasMore && !_loadingMore) {
+    if (groups.isEmpty &&
+        !_hasMore &&
+        !_loadingMore &&
+        _failedSearches.isEmpty) {
       return _buildMessage(
         icon: Icons.search_off_rounded,
         title: context.l10n.bookSourcesNoResults,
-        message: _failedSourceCount > 0
-            ? context.l10n.bookSourcesFailedCount(_failedSourceCount)
-            : '',
+        message: '',
       );
     }
     return CustomScrollView(
@@ -537,15 +580,10 @@ class _SourceSearchPageState extends State<SourceSearchPage> {
             ),
           ),
         ),
-        if (_failedSourceCount > 0)
+        if (_failedSearches.isNotEmpty)
           SliverPadding(
             padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
-            sliver: SliverToBoxAdapter(
-              child: Text(
-                context.l10n.bookSourcesFailedCount(_failedSourceCount),
-                style: TextStyle(color: scheme.error, fontSize: 12),
-              ),
-            ),
+            sliver: SliverToBoxAdapter(child: _buildSearchFailures()),
           ),
         SliverPadding(
           padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
@@ -570,7 +608,7 @@ class _SourceSearchPageState extends State<SourceSearchPage> {
               child: Text('当前结果没有匹配的书籍，可调整过滤方式或继续加载。'),
             ),
           ),
-        if (_hasMore || _loadingMore || _loadMoreFailed)
+        if (_hasMore || _loadingMore || _failedSearches.isNotEmpty)
           SliverPadding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
             sliver: SliverToBoxAdapter(
@@ -583,14 +621,16 @@ class _SourceSearchPageState extends State<SourceSearchPage> {
                       )
                     : OutlinedButton.icon(
                         key: const Key('bookSourceLoadMoreButton'),
-                        onPressed: _loadMore,
+                        onPressed: _searching
+                            ? null
+                            : () => _loadMore(retryFailed: true),
                         icon: Icon(
-                          _loadMoreFailed
+                          _failedSearches.isNotEmpty
                               ? Icons.refresh_rounded
                               : Icons.expand_more_rounded,
                         ),
                         label: Text(
-                          _loadMoreFailed
+                          _failedSearches.isNotEmpty
                               ? context.l10n.retry
                               : context.l10n.bookSourcesLoadMore,
                         ),
@@ -599,6 +639,66 @@ class _SourceSearchPageState extends State<SourceSearchPage> {
             ),
           ),
       ],
+    );
+  }
+
+  Widget _buildSearchFailures() => Wrap(
+    crossAxisAlignment: WrapCrossAlignment.center,
+    spacing: 8,
+    children: [
+      TextButton(
+        key: const Key('bookSourceSearchFailures'),
+        style: TextButton.styleFrom(
+          foregroundColor: Theme.of(context).colorScheme.error,
+        ),
+        onPressed: _showSearchFailures,
+        child: Text(
+          '${context.l10n.bookSourcesFailedCount(_failedSearches.length)} · 查看',
+        ),
+      ),
+      TextButton.icon(
+        key: const Key('bookSourceRetryFailed'),
+        onPressed: _searching || _loadingMore ? null : _retryFailedSources,
+        icon: const Icon(Icons.refresh_rounded, size: 18),
+        label: const Text('重试失败书源'),
+      ),
+    ],
+  );
+
+  void _showSearchFailures() {
+    final failures = _failedSearches.values.toList(growable: false);
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      useSafeArea: true,
+      isScrollControlled: true,
+      constraints: const BoxConstraints(maxWidth: 640),
+      builder: (sheetContext) => SizedBox(
+        height: MediaQuery.sizeOf(sheetContext).height * 0.6,
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+          children: [
+            const ListTile(title: Text('失败书源与原因')),
+            ...failures.map(
+              (batch) => ListTile(
+                title: Text(batch.source.name),
+                subtitle: Text('第 ${batch.page} 页 · ${batch.error}'),
+                trailing: IconButton(
+                  key: Key('retrySearchSource-${batch.source.id}'),
+                  tooltip: context.l10n.retry,
+                  onPressed: _searching || _loadingMore
+                      ? null
+                      : () {
+                          Navigator.of(sheetContext).pop();
+                          unawaited(_retryFailedSources(batch.source.id));
+                        },
+                  icon: const Icon(Icons.refresh_rounded),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -751,14 +851,24 @@ class _SourceSearchPageState extends State<SourceSearchPage> {
       final key = BookSearchFilter.workKey(result.book, result.source.id);
       (groups[key] ??= []).add(result);
     }
-    return groups.values.toList(growable: false);
+    final ranked = [
+      for (final (index, group) in groups.values.indexed)
+        (index: index, group: group, rank: filter.relevance(group.first.book)),
+    ];
+    ranked.sort((a, b) {
+      final rank = a.rank.compareTo(b.rank);
+      return rank != 0 ? rank : a.index.compareTo(b.index);
+    });
+    return ranked.map((entry) => entry.group).toList(growable: false);
   }
 
   Widget _buildBookGroup(List<SourcedBook> group) {
     final result = group.first;
     return SourcedBookListTile(
       result: result,
-      onTap: () => _actions.showBookDetails(result),
+      onTap: () => widget.onBookSelected != null && group.length > 1
+          ? _chooseBookSource(group)
+          : _openSearchResult(result),
       footer: group.length > 1
           ? Align(
               alignment: Alignment.centerLeft,
@@ -781,6 +891,15 @@ class _SourceSearchPageState extends State<SourceSearchPage> {
           ? Text('作者未标注，请核对简介和目录', style: Theme.of(context).textTheme.bodySmall)
           : null,
     );
+  }
+
+  void _openSearchResult(SourcedBook book) {
+    final select = widget.onBookSelected;
+    if (select != null) {
+      select(book);
+    } else {
+      _actions.showBookDetails(book);
+    }
   }
 
   void _chooseBookSource(List<SourcedBook> group) {
@@ -831,7 +950,7 @@ class _SourceSearchPageState extends State<SourceSearchPage> {
                   trailing: const Icon(Icons.chevron_right_rounded),
                   onTap: () {
                     Navigator.of(context).pop();
-                    _actions.showBookDetails(group[index]);
+                    _openSearchResult(group[index]);
                   },
                 ),
               ),
@@ -948,17 +1067,19 @@ class _SourceSearchPageState extends State<SourceSearchPage> {
 class _SearchBatch {
   final RegisteredBookSource source;
   final List<SourcedBook> items;
-  final bool failed;
+  final String? error;
   final int page;
   final bool hasMore;
 
   const _SearchBatch({
     required this.source,
     required this.items,
-    this.failed = false,
+    this.error,
     this.page = 1,
     this.hasMore = false,
   });
+
+  bool get failed => error != null;
 }
 
 class _SearchPageState {
