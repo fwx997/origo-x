@@ -9,7 +9,7 @@ import 'dart:typed_data';
 
 import 'package:archive/archive_io.dart';
 import 'package:crypto/crypto.dart';
-import 'package:gbk_codec/gbk_codec.dart';
+import '../../utils/fast_gbk_decoder.dart';
 import 'package:html/dom.dart' as html_dom;
 import 'package:html/parser.dart' as html_parser;
 import 'package:path/path.dart' as path;
@@ -605,7 +605,7 @@ String _decodeEpubText(List<int> bytes) {
     // EPUB requires Unicode, but older Chinese books in the wild sometimes
     // declare or contain GBK. Decoding them is preferable to dropping the
     // entire chapter because of one invalid UTF-8 byte sequence.
-    return gbk_bytes.decode(withoutBom);
+    return decodeGbkFast(Uint8List.fromList(withoutBom));
   }
 }
 

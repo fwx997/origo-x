@@ -4,7 +4,7 @@ import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:gbk_codec/gbk_codec.dart';
+import 'package:xxread/utils/fast_gbk_decoder.dart';
 import 'package:path/path.dart' as path;
 import 'package:xxread/services/books/epub_native_parser.dart';
 
@@ -360,7 +360,7 @@ List<int> _epub3FixtureWithoutSpine() {
   );
   addBytes(
     'EPUB/text/two.xhtml',
-    gbk_bytes.encode(
+    encodeGbkFast(
       '<html><head><meta charset="gbk"></head>'
       '<body><p>GBK 章节不应丢字。</p></body></html>',
     ),

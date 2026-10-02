@@ -28,7 +28,7 @@ jobs:
       - name: Check source integration
         run: |
           flutter analyze --no-fatal-infos --no-fatal-warnings
-          flutter test --concurrency=2
+          flutter test --concurrency=2 --reporter expanded
           flutter test packages/xpath_selector_html_parser/test/html_test.dart
       - name: Build unsigned iOS app
         run: flutter build ios --release --no-codesign
