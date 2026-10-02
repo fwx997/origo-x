@@ -16,6 +16,15 @@
 
 ## 最新 iOS 体验版交付（2026-10-02）
 
+- 版本 `2.4.7+261002004`，构建提交 `a7b5c7103d54b3fdd5bed2acdfd619e8ecbf3f59`。
+- [下载 IPA](https://github.com/fwx997/origo-x/releases/tag/xbs-preview-7-1)；[Actions #7](https://github.com/fwx997/origo-x/actions/runs/36993274526) 成功。
+- 已打入本轮松鹤、JSON、XPath、nativeTool、缓存及分页共用修复。Windows 40 项针对测试通过；macOS 754 项测试通过、14 项原生环境测试按配置跳过，另完成 XPath 检查。
+- IPA 21,219,936 字节；版本、编译标识、源码提交、单一载荷、ZIP、Runner/App/Flutter/FJS ARM64 均已核验；新辅助库内容与源码完全一致，依赖许可证已包含。
+- SHA-256：`b25adb7570d350584b06d3c8ce24d9be3ea18afed5452f93fe833ac70383374b`。
+- 本地：`../Origo-X-XBS-2.4.7-261002004-unsigned.ipa`；完整交付在 `../origo-x-delivery/xbs-preview-7-1/`。可配合先前的恢复合集使用。未进行手机 / LiveContainer 安装验证。
+
+## 前次 iOS 体验版交付（2026-10-02）
+
 - 版本 `2.4.5+261002002`，源码提交 `4a23bb5169008300410ba3006fba095dca4f9da7`。
 - [下载最新 IPA](https://github.com/fwx997/origo-x/releases/tag/xbs-preview-5-1)；[Actions #5](https://github.com/fwx997/origo-x/actions/runs/36965861127) 已成功。
 - 已完成香色式搜索/分类/详情/站点选择布局，统一顶部主题底色；普通深浅色字号一致。修复封面多图拼接、HTML 编码识别与 XPath 条件兼容，移除打赏和首次支持引导。
