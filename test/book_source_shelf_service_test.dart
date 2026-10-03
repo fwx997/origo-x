@@ -236,7 +236,18 @@ void main() {
         .where((entry) => entry.path.endsWith('.part'))
         .toList();
     expect(partials, hasLength(1));
-    final partialText = await File(partials.single.path).readAsString();
+    final partial = File(partials.single.path);
+    var partialText = await partial.readAsString();
+    // Starting the next request does not mean the async file sink has flushed.
+    // Keep later chapters blocked while waiting for the first three on disk.
+    for (
+      var attempt = 0;
+      attempt < 100 && !partialText.contains('正文2');
+      attempt++
+    ) {
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      partialText = await partial.readAsString();
+    }
     expect(partialText, contains('正文0'));
     expect(partialText, contains('正文2'));
     expect(partialText, isNot(contains('正文3')));
