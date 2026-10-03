@@ -504,8 +504,7 @@ class _ReaderSettingsSheetState extends State<ReaderSettingsSheet> {
   ];
 
   List<Widget> _pagingTabChildren() => [
-    _interactionSettings(),
-    const SizedBox(height: 12),
+    ..._interactionSettings(),
     ListTile(
       contentPadding: EdgeInsets.zero,
       leading: const Icon(Icons.swap_calls),
@@ -562,50 +561,44 @@ class _ReaderSettingsSheetState extends State<ReaderSettingsSheet> {
     ),
   ];
 
-  Widget _interactionSettings() => Card(
-    margin: EdgeInsets.zero,
-    elevation: 0,
-    color: Theme.of(context).colorScheme.surfaceContainerLow,
-    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-    clipBehavior: Clip.antiAlias,
-    child: Column(
-      children: [
-        SwitchListTile(
-          key: const ValueKey('reader-text-selection-switch'),
-          secondary: const Icon(Icons.text_fields_rounded),
-          title: const Text('长按选中文字'),
-          subtitle: const Text('选中后可复制、划线和添加笔记'),
-          value: _textSelectionEnabled,
-          onChanged: (value) {
-            setState(() => _textSelectionEnabled = value);
-            widget.onTextSelectionChanged?.call(value);
-          },
-        ),
-        SwitchListTile(
-          key: const ValueKey('reader-edge-swipe-back-switch'),
-          secondary: const Icon(Icons.swipe_right_rounded),
-          title: const Text('左侧边缘滑动返回'),
-          subtitle: const Text('从屏幕左侧边缘向右滑动，退出阅读'),
-          value: _edgeSwipeBackEnabled,
-          onChanged: (value) {
-            setState(() => _edgeSwipeBackEnabled = value);
-            widget.onEdgeSwipeBackChanged?.call(value);
-          },
-        ),
-        SwitchListTile(
-          key: const ValueKey('reader-hide-bars-on-swipe-switch'),
-          secondary: const Icon(Icons.unfold_less_rounded),
-          title: const Text('滑动时隐藏操作栏'),
-          subtitle: const Text('上下滑动收起顶部和底部栏，轻点中央恢复'),
-          value: _hideBarsOnVerticalSwipe,
-          onChanged: (value) {
-            setState(() => _hideBarsOnVerticalSwipe = value);
-            widget.onHideBarsOnVerticalSwipeChanged?.call(value);
-          },
-        ),
-      ],
+  List<Widget> _interactionSettings() => [
+    SwitchListTile(
+      key: const ValueKey('reader-text-selection-switch'),
+      contentPadding: EdgeInsets.zero,
+      secondary: const Icon(Icons.text_fields_rounded),
+      title: const Text('长按选中文字'),
+      subtitle: const Text('选中后可复制、划线和添加笔记'),
+      value: _textSelectionEnabled,
+      onChanged: (value) {
+        setState(() => _textSelectionEnabled = value);
+        widget.onTextSelectionChanged?.call(value);
+      },
     ),
-  );
+    SwitchListTile(
+      key: const ValueKey('reader-edge-swipe-back-switch'),
+      contentPadding: EdgeInsets.zero,
+      secondary: const Icon(Icons.swipe_right_rounded),
+      title: const Text('左侧边缘滑动返回'),
+      subtitle: const Text('从屏幕左侧边缘向右滑动，退出阅读'),
+      value: _edgeSwipeBackEnabled,
+      onChanged: (value) {
+        setState(() => _edgeSwipeBackEnabled = value);
+        widget.onEdgeSwipeBackChanged?.call(value);
+      },
+    ),
+    SwitchListTile(
+      key: const ValueKey('reader-hide-bars-on-swipe-switch'),
+      contentPadding: EdgeInsets.zero,
+      secondary: const Icon(Icons.unfold_less_rounded),
+      title: const Text('滑动时隐藏操作栏'),
+      subtitle: const Text('上下滑动收起顶部和底部栏，轻点中央恢复'),
+      value: _hideBarsOnVerticalSwipe,
+      onChanged: (value) {
+        setState(() => _hideBarsOnVerticalSwipe = value);
+        widget.onHideBarsOnVerticalSwipeChanged?.call(value);
+      },
+    ),
+  ];
 }
 
 enum _ReaderSettingsTab { theme, text, layout, paging }

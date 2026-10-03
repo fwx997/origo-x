@@ -2,9 +2,8 @@ import 'package:flutter/material.dart';
 
 /// Shared interaction shell for local and online vertical paging.
 ///
-/// The tap recognizer deliberately lives inside [SelectionArea]. If it wraps
-/// the selectable scroll view from outside, selection recognizers can consume
-/// the light tap before the reader gets a chance to reveal its controls.
+/// Each annotated text page owns its selection policy. An outer selection
+/// area would make text selectable again when page selection is disabled.
 class ReaderVerticalPagingSurface extends StatelessWidget {
   const ReaderVerticalPagingSurface({
     super.key,
@@ -21,14 +20,12 @@ class ReaderVerticalPagingSurface extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SelectionArea(
-      child: GestureDetector(
-        key: surfaceKey,
-        behavior: HitTestBehavior.translucent,
-        onTap: onTap,
-        onHorizontalDragEnd: onHorizontalDragEnd,
-        child: child,
-      ),
+    return GestureDetector(
+      key: surfaceKey,
+      behavior: HitTestBehavior.translucent,
+      onTap: onTap,
+      onHorizontalDragEnd: onHorizontalDragEnd,
+      child: child,
     );
   }
 }

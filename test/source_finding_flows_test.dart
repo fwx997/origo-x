@@ -198,7 +198,7 @@ void main() {
     expect(find.byKey(const Key('bookSourceStopSearch')), findsNothing);
   });
 
-  testWidgets('retrying failed discovery retains successful sources', (
+  testWidgets('retrying discovery requests only the selected site', (
     tester,
   ) async {
     final calls = <String, int>{};
@@ -212,10 +212,13 @@ void main() {
       };
     await _discoverPage(tester, client, [_source('A'), _source('B')]);
     expect(find.text('A ready'), findsOneWidget);
+    expect(calls, {'A': 1});
+    await _pickSource(tester, 'bookSourceDiscoverSwitch', _source('B').id);
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Try again'));
     await tester.pumpAndSettle();
     expect(calls, {'A': 1, 'B': 2});
-    expect(find.text('A ready'), findsOneWidget);
+    expect(find.text('A ready'), findsNothing);
     expect(find.text('B ready'), findsOneWidget);
   });
 
@@ -458,7 +461,11 @@ void main() {
       await _pickSource(tester, 'bookSourceDiscoverSwitch', _source('B').id);
       await tester.pumpAndSettle();
       expect(oldToken?.isCancelled, isTrue);
-      expect(find.textContaining('temporarily unavailable'), findsOneWidget);
+      expect(find.textContaining('temporarily unavailable'), findsNothing);
+      expect(
+        find.byKey(const ValueKey('discover-load-failure')),
+        findsOneWidget,
+      );
       await tester.tap(find.text('Try again'));
       await tester.pumpAndSettle();
       expect(find.text('B分类的书'), findsOneWidget);
@@ -556,6 +563,7 @@ Future<void> _discoverPage(
   tester.view.physicalSize = const Size(430, 1100);
   addTearDown(tester.view.reset);
   SharedPreferences.setMockInitialValues({
+    BookSourcesPage.selectedSourceKey: sources.first.id,
     'open_reading_book_sources_v1': jsonEncode(
       sources.map((s) => s.toJson()).toList(),
     ),

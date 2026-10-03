@@ -22,7 +22,7 @@ void main() {
     SharedPreferences.setMockInitialValues({});
   });
 
-  testWidgets('discover scope defaults to all and filters every section', (
+  testWidgets('discovery waits for a site choice and requests only that site', (
     tester,
   ) async {
     tester.view.devicePixelRatio = 1;
@@ -51,14 +51,23 @@ void main() {
       find.byKey(const Key('bookSourceDiscoverScopeControl')),
       findsOneWidget,
     );
-    expect(find.text('Source A picks'), findsOneWidget);
-    expect(find.text('Source B picks'), findsOneWidget);
+    expect(find.text('Source A picks'), findsNothing);
+    expect(find.text('Source B picks'), findsNothing);
+    expect(client.discoverySourceIds, isEmpty);
+    expect(find.text('Categories'), findsNothing);
 
     await _pickSource(tester, 'bookSourceDiscoverSwitch', 'source-b');
     await tester.pumpAndSettle();
 
     expect(find.text('Source A picks'), findsNothing);
     expect(find.text('Source B picks'), findsOneWidget);
+    expect(client.discoverySourceIds, ['source-b']);
+    expect(
+      (await SharedPreferences.getInstance()).getString(
+        BookSourcesPage.selectedSourceKey,
+      ),
+      'source-b',
+    );
 
     await tester.tap(find.text('Categories'));
     await tester.pumpAndSettle();
@@ -104,6 +113,7 @@ void main() {
   ) async {
     final source = _source('source-a', 'Source A');
     SharedPreferences.setMockInitialValues({
+      BookSourcesPage.selectedSourceKey: source.id,
       'open_reading_book_sources_v1': jsonEncode([source.toJson()]),
     });
 
@@ -121,20 +131,34 @@ void main() {
     expect(find.text('Could not load discovery content'), findsOneWidget);
     expect(
       find.textContaining('Source A: Source request timed out.'),
-      findsOneWidget,
+      findsNothing,
     );
     expect(
       find.text('Current sources do not support this section'),
       findsNothing,
     );
     expect(find.text('Try again'), findsOneWidget);
+    expect(
+      tester
+          .getSize(find.byKey(const ValueKey('discover-load-failure')))
+          .height,
+      lessThan(90),
+    );
+    await tester.tap(find.byTooltip('查看失败详情'));
+    await tester.pumpAndSettle();
+    expect(
+      find.textContaining('Source A: Source request timed out.'),
+      findsOneWidget,
+    );
+    await tester.tap(find.text('Close'));
+    await tester.pumpAndSettle();
 
     await tester.tap(find.text('Categories'));
     await tester.pumpAndSettle();
     expect(find.text('Could not load discovery content'), findsOneWidget);
     expect(
       find.textContaining('Source A: Source request timed out.'),
-      findsOneWidget,
+      findsNothing,
     );
 
     await tester.tap(find.text('Latest'));
@@ -142,13 +166,14 @@ void main() {
     expect(find.text('Could not load discovery content'), findsOneWidget);
     expect(
       find.textContaining('Source A: Source request timed out.'),
-      findsOneWidget,
+      findsNothing,
     );
   });
 
   testWidgets('an empty capable source shows an empty state', (tester) async {
     final source = _source('source-a', 'Source A');
     SharedPreferences.setMockInitialValues({
+      BookSourcesPage.selectedSourceKey: source.id,
       'open_reading_book_sources_v1': jsonEncode([source.toJson()]),
     });
 
@@ -181,6 +206,7 @@ void main() {
       capabilities: const {'search', 'detail', 'catalog', 'content'},
     );
     SharedPreferences.setMockInitialValues({
+      BookSourcesPage.selectedSourceKey: source.id,
       'open_reading_book_sources_v1': jsonEncode([source.toJson()]),
     });
 
@@ -209,6 +235,7 @@ void main() {
 
     final source = _source('source-a', 'Source A');
     SharedPreferences.setMockInitialValues({
+      BookSourcesPage.selectedSourceKey: source.id,
       'open_reading_book_sources_v1': jsonEncode([source.toJson()]),
     });
     final client = _LargeCategoryDiscoveryClient();
@@ -259,6 +286,7 @@ void main() {
 
       final source = _source('source-a', 'Source A');
       SharedPreferences.setMockInitialValues({
+        BookSourcesPage.selectedSourceKey: source.id,
         'open_reading_book_sources_v1': jsonEncode([source.toJson()]),
       });
 
@@ -586,12 +614,14 @@ class _FakeShelfService extends BookSourceShelfService {
 }
 
 class _DiscoveryClient extends BookSourceClient {
+  final discoverySourceIds = <String>[];
   final List<String> categoryBrowseSourceIds = [];
 
   @override
   Future<BookSourceDiscoveryPage> getDiscovery(
     RegisteredBookSource source,
   ) async {
+    discoverySourceIds.add(source.id);
     return BookSourceDiscoveryPage(
       sections: [
         BookSourceDiscoverySection(

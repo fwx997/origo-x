@@ -11,17 +11,27 @@ Future<SourceSelection?> showSourcePicker(
   BuildContext context, {
   required List<RegisteredBookSource> sources,
   required String? selectedId,
+  bool allowAll = true,
 }) => showModalBottomSheet<SourceSelection>(
   context: context,
   isScrollControlled: true,
   useSafeArea: true,
   showDragHandle: false,
   constraints: const BoxConstraints(maxWidth: 640),
-  builder: (_) => _SourcePicker(sources: sources, selectedId: selectedId),
+  builder: (_) => _SourcePicker(
+    sources: sources,
+    selectedId: selectedId,
+    allowAll: allowAll,
+  ),
 );
 
 class _SourcePicker extends StatefulWidget {
-  const _SourcePicker({required this.sources, required this.selectedId});
+  const _SourcePicker({
+    required this.sources,
+    required this.selectedId,
+    required this.allowAll,
+  });
+  final bool allowAll;
   final List<RegisteredBookSource> sources;
   final String? selectedId;
 
@@ -76,7 +86,9 @@ class _SourcePickerState extends State<_SourcePicker> {
         TextButton(
           style: sourceTextActionStyle(context),
           key: const Key('sourcePickerConfirm'),
-          onPressed: () => Navigator.pop(context, SourceSelection(_selected)),
+          onPressed: !widget.allowAll && _selected == null
+              ? null
+              : () => Navigator.pop(context, SourceSelection(_selected)),
           child: const Text('确定'),
         ),
       ],
@@ -110,16 +122,16 @@ class _SourcePickerState extends State<_SourcePicker> {
   Widget _list(List<RegisteredBookSource> matches) => ListView.builder(
     padding: EdgeInsets.only(bottom: MediaQuery.paddingOf(context).bottom + 12),
     keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-    itemCount: matches.length + 2,
+    itemCount: matches.length + (widget.allowAll ? 2 : 1),
     itemBuilder: (context, index) {
-      if (index == 0) return _row(null, '全部站点', '跨站点搜索与浏览');
-      if (index == 1) {
+      if (widget.allowAll && index == 0) return _row(null, '全部站点', '跨站点搜索');
+      if (index == (widget.allowAll ? 1 : 0)) {
         return Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           child: Text(matches.isEmpty ? '没有匹配的站点' : '可用站点 · ${matches.length}'),
         );
       }
-      final source = matches[index - 2];
+      final source = matches[index - (widget.allowAll ? 2 : 1)];
       return _row(source.id, source.name, source.apiBaseUrl.host);
     },
   );

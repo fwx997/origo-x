@@ -1,4 +1,4 @@
-// 文件说明：发现页，聚合展示已启用书源的推荐、分类与最新书籍。
+// 文件说明：先选择站点，再展示该站点的推荐、分类与最新书籍。
 // 技术要点：Flutter UI、按 Tab 缓存的书源请求、下拉刷新。
 
 import 'dart:async';
@@ -7,6 +7,7 @@ import 'package:xxread/book_sources/services/book_download_cancellation.dart';
 import 'package:xxread/book_sources/xbs/xbs_discovery.dart';
 
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:xxread/book_sources/models/registered_book_source.dart';
 import 'package:xxread/book_sources/protocol/book_source_protocol.dart';
 import 'package:xxread/book_sources/services/book_source_client.dart';
@@ -30,6 +31,7 @@ class BookSourcesPage extends StatefulWidget {
   final BookSourceClient? client;
 
   static const int maxLatestItemsPerSource = 12;
+  static const selectedSourceKey = 'discovery_selected_source_v1';
 
   const BookSourcesPage({super.key, this.client});
 
@@ -134,9 +136,16 @@ class _BookSourcesPageState extends State<BookSourcesPage> {
   Future<void> _loadSources() async {
     final generation = ++_sourceGeneration;
     final sources = await _registry.loadRunnable();
+    final prefs = await SharedPreferences.getInstance();
+    final selectedId =
+        _selectedSourceId ?? prefs.getString(BookSourcesPage.selectedSourceKey);
     if (!mounted || generation != _sourceGeneration) return;
     setState(() {
       _sources = sources;
+      _selectedSourceId = sources.any((source) => source.id == selectedId)
+          ? selectedId
+          : null;
+      _section = _availableSection(_section);
       _loadingSources = false;
     });
     await _loadSection(_section);
@@ -145,7 +154,6 @@ class _BookSourcesPageState extends State<BookSourcesPage> {
   Future<void> _reloadAll() async {
     _cancelRequests();
     _cache.clear();
-    _selectedSourceId = null;
     _selectedCategory = null;
     _categoryBooks = const [];
     _loadingCategoryBooks = false;
@@ -173,8 +181,17 @@ class _BookSourcesPageState extends State<BookSourcesPage> {
     _DiscoverSection.latest => 'browse',
   };
 
-  List<RegisteredBookSource> _sourcesFor(_DiscoverSection section) =>
-      _targets(_capabilityFor(section));
+  List<RegisteredBookSource> _sourcesFor(_DiscoverSection section) => _targets(
+    _capabilityFor(section),
+  ).where((source) => source.id == _selectedSourceId).toList();
+
+  _DiscoverSection _availableSection(_DiscoverSection preferred) {
+    if (_sourcesFor(preferred).isNotEmpty) return preferred;
+    return _DiscoverSection.values
+            .where((section) => _sourcesFor(section).isNotEmpty)
+            .firstOrNull ??
+        preferred;
+  }
 
   bool _matchesSelectedSource(RegisteredBookSource source) =>
       _selectedSourceId == null || source.id == _selectedSourceId;
@@ -184,6 +201,7 @@ class _BookSourcesPageState extends State<BookSourcesPage> {
     bool force = false,
     bool retryFailed = false,
   }) async {
+    if (_selectedSourceId == null) return;
     final cached = _cache[section];
     final interrupted =
         cached != null &&
@@ -327,10 +345,12 @@ class _BookSourcesPageState extends State<BookSourcesPage> {
   }
 
   void _changeSourceScope(String? sourceId) {
-    if (_selectedSourceId == sourceId) return;
-    _categoryRequest.cancel();
+    if (sourceId == null || _selectedSourceId == sourceId) return;
+    _cancelRequests();
     setState(() {
+      _cache.clear();
       _selectedSourceId = sourceId;
+      _section = _availableSection(_section);
       _selectedCategory = null;
       _categoryBooks = const [];
       _loadingCategoryBooks = false;
@@ -338,9 +358,13 @@ class _BookSourcesPageState extends State<BookSourcesPage> {
       _categoryError = null;
       _categoryHasMore = false;
     });
-    if (_section == _DiscoverSection.categories) {
-      _autoSelectFirstCategory();
-    }
+    unawaited(_rememberSource(sourceId));
+    unawaited(_loadSection(_section));
+  }
+
+  Future<void> _rememberSource(String sourceId) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(BookSourcesPage.selectedSourceKey, sourceId);
   }
 
   Future<void> _changeSection(_DiscoverSection section) async {
@@ -353,17 +377,8 @@ class _BookSourcesPageState extends State<BookSourcesPage> {
       _categoryHasMore = false;
       _loadingCategoryBooks = false;
     }
-    final selectedSourceStillAvailable =
-        _selectedSourceId == null ||
-        _sourcesFor(section).any((source) => source.id == _selectedSourceId);
     setState(() {
       _section = section;
-      if (!selectedSourceStillAvailable) {
-        _selectedSourceId = null;
-        _selectedCategory = null;
-        _categoryBooks = const [];
-        _loadingCategoryBooks = false;
-      }
     });
     await _loadSection(section);
     if (mounted && section == _DiscoverSection.categories) {
@@ -553,11 +568,11 @@ class _BookSourcesPageState extends State<BookSourcesPage> {
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
                           if (useRailNavigation) _buildRailHeader(),
-                          if (_sourcesFor(_section).isNotEmpty) ...[
+                          if (_sources.isNotEmpty) ...[
                             const SizedBox(height: 8),
-                            _buildSourceScope(_sourcesFor(_section)),
+                            _buildSourceScope(_sources),
                           ],
-                          _buildSectionTabs(),
+                          if (_selectedSourceId != null) _buildSectionTabs(),
                           const SizedBox(height: 4),
                         ],
                       ),
@@ -612,18 +627,21 @@ class _BookSourcesPageState extends State<BookSourcesPage> {
       label: '',
       value: _section,
       items: [
-        DropdownMenuItem(
-          value: _DiscoverSection.recommended,
-          child: Text(context.l10n.discoverRecommended),
-        ),
-        DropdownMenuItem(
-          value: _DiscoverSection.categories,
-          child: Text(context.l10n.discoverCategories),
-        ),
-        DropdownMenuItem(
-          value: _DiscoverSection.latest,
-          child: Text(context.l10n.discoverLatest),
-        ),
+        if (_sourcesFor(_DiscoverSection.recommended).isNotEmpty)
+          DropdownMenuItem(
+            value: _DiscoverSection.recommended,
+            child: Text(context.l10n.discoverRecommended),
+          ),
+        if (_sourcesFor(_DiscoverSection.categories).isNotEmpty)
+          DropdownMenuItem(
+            value: _DiscoverSection.categories,
+            child: Text(context.l10n.discoverCategories),
+          ),
+        if (_sourcesFor(_DiscoverSection.latest).isNotEmpty)
+          DropdownMenuItem(
+            value: _DiscoverSection.latest,
+            child: Text(context.l10n.discoverLatest),
+          ),
       ],
       onChanged: (section) {
         if (section != null) unawaited(_changeSection(section));
@@ -633,7 +651,7 @@ class _BookSourcesPageState extends State<BookSourcesPage> {
 
   Widget _buildSourceScope(List<RegisteredBookSource> sources) {
     final selected = sources.where((source) => source.id == _selectedSourceId);
-    final label = selected.isEmpty ? '全部站点' : selected.first.name;
+    final label = selected.isEmpty ? '选择一个站点开始浏览' : selected.first.name;
     return Row(
       key: const Key('bookSourceDiscoverScopeControl'),
       children: [
@@ -658,10 +676,11 @@ class _BookSourcesPageState extends State<BookSourcesPage> {
               context,
               sources: sources,
               selectedId: _selectedSourceId,
+              allowAll: false,
             );
             if (mounted && selected != null) _changeSourceScope(selected.id);
           },
-          child: const Text('切换'),
+          child: Text(_selectedSourceId == null ? '选择站点' : '切换'),
         ),
       ],
     );
@@ -679,6 +698,7 @@ class _BookSourcesPageState extends State<BookSourcesPage> {
         ),
       ];
     }
+    if (_selectedSourceId == null) return _buildSourceChoices(bottomPadding);
     final cache = _cache[_section];
     if (cache == null) return const [];
     final pending = cache.pending
@@ -703,15 +723,9 @@ class _BookSourcesPageState extends State<BookSourcesPage> {
     if (failures.isNotEmpty) {
       slivers.add(
         _paddedSectionSliver(
-          _buildMessageCard(
-            icon: Icons.cloud_off_outlined,
-            title: context.l10n.discoverLoadFailed,
-            message: [
-              if (failures.length > 3) '${failures.length} 个书源加载失败，显示前 3 个：',
-              ...failures.take(3).map((entry) => entry.value),
-            ].join('\n'),
-            actionLabel: context.l10n.discoverRetry,
-            onAction: () => _loadSection(_section, retryFailed: true),
+          _buildLoadFailure(
+            failures.map((entry) => entry.value).join('\n'),
+            () => _loadSection(_section, retryFailed: true),
           ),
           bottomPadding: 12,
         ),
@@ -828,13 +842,7 @@ class _BookSourcesPageState extends State<BookSourcesPage> {
     if (_categoryError != null) {
       slivers.add(
         _paddedSectionSliver(
-          _buildMessageCard(
-            icon: Icons.cloud_off_outlined,
-            title: context.l10n.discoverLoadFailed,
-            message: _categoryError!,
-            actionLabel: context.l10n.discoverRetry,
-            onAction: _loadCategoryPage,
-          ),
+          _buildLoadFailure(_categoryError!, _loadCategoryPage),
           bottomPadding: bottomPadding,
         ),
       );
@@ -1001,6 +1009,88 @@ class _BookSourcesPageState extends State<BookSourcesPage> {
       icon: Icons.inbox_outlined,
       title: context.l10n.discoverEmptyTitle,
       message: context.l10n.discoverEmptyMessage,
+    );
+  }
+
+  List<Widget> _buildSourceChoices(double bottomPadding) {
+    if (_sources.isEmpty) {
+      return [
+        _paddedSectionSliver(
+          _buildUnsupportedMessage('discover'),
+          bottomPadding: bottomPadding,
+        ),
+      ];
+    }
+    return [
+      _paddedSectionSliver(
+        Text('推荐、分类和最新内容均来自所选站点', style: Theme.of(context).textTheme.bodySmall),
+        bottomPadding: 12,
+      ),
+      SliverList.builder(
+        itemCount: _sources.length,
+        itemBuilder: (_, index) =>
+            _centerSectionChild(_sourceChoice(_sources[index])),
+      ),
+      SliverToBoxAdapter(child: SizedBox(height: bottomPadding)),
+    ];
+  }
+
+  Widget _sourceChoice(RegisteredBookSource source) => ListTile(
+    key: ValueKey('discover-source-${source.id}'),
+    contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 2),
+    leading: const Icon(Icons.language_rounded, size: 22),
+    title: Text(source.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+    subtitle: Text(
+      source.apiBaseUrl.host,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+    ),
+    trailing: const Icon(Icons.chevron_right_rounded, size: 20),
+    onTap: () => _changeSourceScope(source.id),
+  );
+
+  Widget _buildLoadFailure(String error, Future<void> Function() retry) =>
+      Padding(
+        key: const ValueKey('discover-load-failure'),
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Row(
+          children: [
+            const Icon(Icons.cloud_off_outlined, size: 20),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                context.l10n.discoverLoadFailed,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ),
+            IconButton(
+              tooltip: '查看失败详情',
+              icon: const Icon(Icons.info_outline_rounded, size: 18),
+              onPressed: () => _showFailureDetails(error),
+            ),
+            TextButton(
+              onPressed: retry,
+              child: Text(context.l10n.discoverRetry),
+            ),
+          ],
+        ),
+      );
+
+  void _showFailureDetails(String error) {
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(context.l10n.discoverLoadFailed),
+        content: SingleChildScrollView(child: Text(error)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text(MaterialLocalizations.of(context).closeButtonLabel),
+          ),
+        ],
+      ),
     );
   }
 

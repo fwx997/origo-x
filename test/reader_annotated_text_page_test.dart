@@ -10,8 +10,85 @@ import 'package:xxread/models/book_note.dart';
 import 'package:xxread/utils/reader_themes.dart';
 import 'package:xxread/widgets/reader_annotated_text_page.dart';
 import 'package:xxread/widgets/reader_tap_observer.dart';
+import 'package:xxread/widgets/reader_vertical_paging_surface.dart';
 
 void main() {
+  for (final platform in [TargetPlatform.iOS, TargetPlatform.android]) {
+    testWidgets(
+      'selection can be disabled under an outer region on $platform',
+      (tester) async {
+        const bodyStyle = TextStyle(fontSize: 20, height: 1.6);
+        final flowStyle = NativeTextFlowStyle(
+          textDirection: TextDirection.ltr,
+          textScaler: TextScaler.noScaling,
+          locale: const Locale('en'),
+          strutStyle: readerStrutStyle(bodyStyle),
+          textHeightBehavior: readerTextHeightBehavior,
+        );
+        Widget reader(bool enabled) => MaterialApp(
+          theme: ThemeData(platform: platform),
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          home: Scaffold(
+            body: SelectionArea(
+              child: ReaderVerticalPagingSurface(
+                child: ReaderAnnotatedTextPage(
+                  selectionEnabled: enabled,
+                  page: const ReaderTextPage(
+                    text: 'Select these words to highlight.',
+                  ),
+                  sourceText: 'Select these words to highlight.',
+                  chapterId: 'chapter-1',
+                  chapterTitle: 'Chapter one',
+                  chapterIndex: 0,
+                  pageIndex: 0,
+                  bookId: 1,
+                  format: BookFormat.txt,
+                  renderer: ReaderRendererType.flutterNative,
+                  palette: ReaderThemes.day,
+                  bodyStyle: bodyStyle,
+                  flowStyle: flowStyle,
+                  annotations: const [],
+                  onSaveTextAnnotation: (_, _) async {},
+                ),
+              ),
+            ),
+          ),
+        );
+        final text = find.descendant(
+          of: find.byType(ReaderAnnotatedTextPage),
+          matching: find.byType(RichText),
+        );
+        Future<void> longPressText() async {
+          final paragraph = tester.renderObject<RenderParagraph>(text);
+          final box = paragraph
+              .getBoxesForSelection(
+                const TextSelection(baseOffset: 2, extentOffset: 3),
+              )
+              .single;
+          await tester.longPressAt(
+            paragraph.localToGlobal(box.toRect().center),
+          );
+          await tester.pumpAndSettle();
+        }
+
+        await tester.pumpWidget(reader(false));
+        await longPressText();
+        expect(tester.widget<RichText>(text).selectionRegistrar, isNull);
+        expect(find.byType(ReaderSelectionToolbar), findsNothing);
+        expect(find.byType(AdaptiveTextSelectionToolbar), findsNothing);
+        await tester.pumpWidget(reader(true));
+        await longPressText();
+        expect(find.byType(ReaderSelectionToolbar), findsOneWidget);
+        await tester.pumpWidget(reader(false));
+        await tester.pumpAndSettle();
+        await longPressText();
+        expect(tester.widget<RichText>(text).selectionRegistrar, isNull);
+        expect(find.byType(ReaderSelectionToolbar), findsNothing);
+        expect(find.byType(AdaptiveTextSelectionToolbar), findsNothing);
+      },
+    );
+  }
   testWidgets(
     'selection toolbar follows the reader palette and saves highlight',
     (tester) async {

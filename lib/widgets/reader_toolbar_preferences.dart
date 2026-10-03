@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+
 import 'package:shared_preferences/shared_preferences.dart';
+
+double readerToolbarWidth(int actionCount) => 18 + actionCount * 72.0;
 
 enum ReaderToolbarAction {
   catalog('目录'),
@@ -200,12 +203,15 @@ class ReaderToolbarSettingsPage extends StatelessWidget {
           if (!value.enabled || actions.isEmpty)
             const Text('底部栏已隐藏')
           else
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [
-                for (final action in actions)
-                  _previewAction(context, action, value.labels),
-              ],
+            SizedBox(
+              width: readerToolbarWidth(actions.length),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  for (final action in actions)
+                    _previewAction(context, action, value.labels),
+                ],
+              ),
             ),
         ],
       ),

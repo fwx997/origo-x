@@ -263,23 +263,32 @@ class ReaderChromeOverlay extends StatelessWidget {
       bottom: visible ? 16 : -150,
       child: SafeArea(
         top: false,
-        child: ReaderControlBar(
-          palette: palette,
-          isTopBar: false,
-          child: Padding(
-            padding: const EdgeInsets.all(9),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [
-                for (final action in actions)
-                  _bottomAction(action, prefs.labels),
-              ],
+        child: Center(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: readerToolbarWidth(actions.length),
             ),
+            child: _bottomBarContent(actions, prefs.labels),
           ),
         ),
       ),
     );
   }
+
+  Widget _bottomBarContent(List<ReaderToolbarAction> actions, bool labels) =>
+      ReaderControlBar(
+        palette: palette,
+        isTopBar: false,
+        child: Padding(
+          padding: const EdgeInsets.all(9),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: [
+              for (final action in actions) _bottomAction(action, labels),
+            ],
+          ),
+        ),
+      );
 
   Widget _bottomAction(ReaderToolbarAction action, bool labels) {
     final (callback, label, icon) = switch (action) {

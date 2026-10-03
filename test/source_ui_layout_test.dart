@@ -157,6 +157,10 @@ void main() {
           );
           await tester.testTextInput.receiveAction(TextInputAction.search);
         } else {
+          await tester.tap(
+            find.byKey(ValueKey('discover-source-${sources.first.id}')),
+          );
+          await tester.pumpAndSettle();
           await tester.tap(find.text('分类'));
         }
         await tester.pumpAndSettle();

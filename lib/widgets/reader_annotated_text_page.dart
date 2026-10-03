@@ -278,7 +278,7 @@ class _ReaderAnnotatedTextPageState extends State<ReaderAnnotatedTextPage> {
               child: content,
             ),
           )
-        : content;
+        : SelectionContainer.disabled(child: content);
     return widget.fillAvailableSpace
         ? Stack(fit: StackFit.expand, children: [text])
         : text;

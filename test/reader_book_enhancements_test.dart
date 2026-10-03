@@ -259,6 +259,26 @@ void main() {
         tester.getTopLeft(find.text('阅读设置')).dx,
         lessThan(tester.getTopLeft(find.text('目录')).dx),
       );
+      final bar = find.descendant(
+        of: find.byKey(const ValueKey('test-bottom-bar')),
+        matching: find.byType(ReaderControlBar),
+      );
+      expect(tester.getSize(bar).width, 162);
+      expect(
+        tester.getCenter(bar).dx,
+        tester.view.physicalSize.width / tester.view.devicePixelRatio / 2,
+      );
+      await ReaderToolbarStore.save(
+        ReaderToolbarStore.state.value.copyWith(
+          hidden: {
+            ReaderToolbarAction.catalog,
+            ReaderToolbarAction.ai,
+            ReaderToolbarAction.aloud,
+          },
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(tester.getSize(bar).width, 90);
       await ReaderToolbarStore.save(
         ReaderToolbarStore.state.value.copyWith(enabled: false),
       );
