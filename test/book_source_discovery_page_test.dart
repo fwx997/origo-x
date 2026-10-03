@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:xxread/book_sources/models/registered_book_source.dart';
 import 'package:xxread/book_sources/protocol/book_source_protocol.dart';
 import 'package:xxread/book_sources/services/book_source_client.dart';
+import 'package:xxread/book_sources/services/book_source_registry.dart';
 import 'package:xxread/book_sources/services/book_download_cancellation.dart';
 import 'package:xxread/book_sources/services/book_source_shelf_service.dart';
 import 'package:xxread/l10n/app_localizations.dart';
@@ -18,6 +19,96 @@ import 'package:xxread/pages/book_sources/widgets/sourced_book_widgets.dart';
 import 'package:xxread/services/library/download_task_controller.dart';
 
 void main() {
+  test(
+    'favorites persist, sort first and survive refresh and batch import',
+    () async {
+      SharedPreferences.setMockInitialValues({});
+      final registry = BookSourceRegistry();
+      final a = _source('a', 'A');
+      final z = _source('z', 'Z');
+      await registry.upsertAll([a, z]);
+      await registry.setFavorite('z', true);
+      expect((await BookSourceRegistry().load()).map((s) => s.id), ['z', 'a']);
+      await registry.upsert(z);
+      await registry.upsertAll([z]);
+      await registry.setEnabled('z', false);
+      final saved = (await registry.load()).first;
+      expect(saved.favorite, isTrue);
+      expect(saved.enabled, isFalse);
+      await registry.setFavorite('z', false);
+      expect((await registry.load()).map((s) => s.id), ['a', 'z']);
+    },
+  );
+
+  testWidgets('favorite stars pin sources without selecting a site', (
+    tester,
+  ) async {
+    final a = _source('a', 'A');
+    final z = _source('z', 'Z');
+    SharedPreferences.setMockInitialValues({
+      'open_reading_book_sources_v1': jsonEncode([a.toJson(), z.toJson()]),
+    });
+    await tester.pumpWidget(
+      MaterialApp(
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: Scaffold(body: BookSourcesPage(client: _DiscoveryClient())),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('discover-favorite-z')));
+    await tester.pumpAndSettle();
+    expect(
+      tester.getTopLeft(find.text('Z')).dy,
+      lessThan(tester.getTopLeft(find.text('A')).dy),
+    );
+    expect(find.text('Categories'), findsNothing);
+    await tester.tap(find.byKey(const Key('bookSourceDiscoverSwitch')));
+    await tester.pumpAndSettle();
+    final zRow = find.byKey(const ValueKey('sourcePicker-z'));
+    final aRow = find.byKey(const ValueKey('sourcePicker-a'));
+    expect(tester.getTopLeft(zRow).dy, lessThan(tester.getTopLeft(aRow).dy));
+    await tester.tap(find.byKey(const ValueKey('source-favorite-z')));
+    await tester.pumpAndSettle();
+    expect(tester.getTopLeft(aRow).dy, lessThan(tester.getTopLeft(zRow).dy));
+    expect(
+      (await BookSourceRegistry().load()).every((source) => !source.favorite),
+      isTrue,
+    );
+  });
+
+  testWidgets(
+    'male and female categories are direct tabs without placeholder labels',
+    (tester) async {
+      final source = _source('a', 'A');
+      final client = _ChannelDiscoveryClient();
+      SharedPreferences.setMockInitialValues({
+        BookSourcesPage.selectedSourceKey: 'a',
+        'open_reading_book_sources_v1': jsonEncode([source.toJson()]),
+      });
+      await tester.pumpWidget(
+        MaterialApp(
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          home: Scaffold(body: BookSourcesPage(client: client)),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Categories'));
+      await tester.pumpAndSettle();
+      expect(find.text('男频'), findsOneWidget);
+      expect(find.text('女频'), findsOneWidget);
+      expect(find.text('筛选 1'), findsNothing);
+      expect(find.text('筛选'), findsNothing);
+      expect(find.text('都市'), findsOneWidget);
+      await tester.tap(find.text('女频'));
+      await tester.pumpAndSettle();
+      expect(client.lastCategory, 'female');
+      expect(find.text('现代言情'), findsOneWidget);
+      expect(find.text('都市'), findsNothing);
+      expect(find.byType(BottomSheet), findsNothing);
+    },
+  );
   setUp(() {
     SharedPreferences.setMockInitialValues({});
   });
@@ -226,7 +317,7 @@ void main() {
     expect(find.text('Nothing to show yet'), findsNothing);
   });
 
-  testWidgets('large category sets use a searchable lazy picker', (
+  testWidgets('large category sets use lazy horizontally scrollable tabs', (
     tester,
   ) async {
     tester.view.devicePixelRatio = 1;
@@ -251,29 +342,19 @@ void main() {
     await tester.tap(find.text('Categories'));
     await tester.pumpAndSettle();
 
-    expect(
-      find.byKey(const Key('bookSourceCategoryPickerButton')),
-      findsOneWidget,
-    );
+    final tabs = find.byKey(const ValueKey('discover-category-tabs'));
+    expect(tabs, findsOneWidget);
     expect(find.text('Category 000'), findsOneWidget);
     expect(find.text('Category 499'), findsNothing);
-
-    await tester.tap(find.byKey(const Key('bookSourceCategoryPickerButton')));
-    await tester.pumpAndSettle();
-    expect(find.byKey(const Key('bookSourceCategoryLazyList')), findsOneWidget);
-    expect(find.text('Category 499'), findsNothing);
-
-    await tester.enterText(
-      find.byKey(const Key('bookSourceCategorySearchField')),
-      '499',
+    await tester.scrollUntilVisible(
+      find.byKey(const ValueKey('discover-category-category-005')),
+      200,
+      scrollable: find.descendant(of: tabs, matching: find.byType(Scrollable)),
     );
+    await tester.tap(find.text('Category 005'));
     await tester.pumpAndSettle();
-    expect(find.text('Category 499'), findsOneWidget);
-
-    await tester.tap(find.text('Category 499'));
-    await tester.pumpAndSettle();
-    expect(client.lastCategoryId, 'category-499');
-    expect(find.text('Category 499'), findsOneWidget);
+    expect(client.lastCategoryId, 'category-005');
+    expect(find.byType(BottomSheet), findsNothing);
     expect(tester.takeException(), isNull);
   });
 
@@ -668,6 +749,54 @@ class _DiscoveryClient extends BookSourceClient {
         updatedAt: DateTime.utc(2026, 7, 17),
       ),
     ]);
+  }
+}
+
+class _ChannelDiscoveryClient extends _DiscoveryClient {
+  String? lastCategory;
+  @override
+  Future<List<BookSourceCategory>> getCategories(
+    RegisteredBookSource source,
+  ) async => [
+    BookSourceCategory(
+      id: 'male',
+      name: '男频',
+      filterGroups: const [
+        BookSourceFilterGroup(
+          id: 'channel',
+          name: '筛选',
+          options: [
+            BookSourceFilterOption(name: '都市', value: '1'),
+            BookSourceFilterOption(name: '玄幻', value: '2'),
+          ],
+        ),
+      ],
+    ),
+    BookSourceCategory(
+      id: 'female',
+      name: '女频',
+      filterGroups: const [
+        BookSourceFilterGroup(
+          id: 'channel',
+          name: '筛选',
+          options: [
+            BookSourceFilterOption(name: '现代言情', value: '3'),
+            BookSourceFilterOption(name: '古代言情', value: '4'),
+          ],
+        ),
+      ],
+    ),
+  ];
+  @override
+  Future<BookSourceSearchPage> browse(
+    RegisteredBookSource source, {
+    String? category,
+    String sort = 'latest',
+    int page = 1,
+    int pageSize = 20,
+  }) async {
+    lastCategory = category;
+    return _page([_book('book', '频道书籍')]);
   }
 }
 

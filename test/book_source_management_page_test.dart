@@ -321,7 +321,22 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
     expect(tester.takeException(), isNull);
-    await tester.tap(find.byType(PopupMenuItem<String>).first);
+    await tester.tap(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is PopupMenuItem<String> && widget.value == 'favorite',
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('收藏置顶'), findsOneWidget);
+    await tester.tap(find.byType(PopupMenuButton<String>));
+    await tester.pumpAndSettle();
+    expect(find.text('取消收藏'), findsOneWidget);
+    await tester.tap(
+      find.byWidgetPredicate(
+        (widget) => widget is PopupMenuItem<String> && widget.value == 'rights',
+      ),
+    );
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
 

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:xxread/book_sources/services/book_source_registry.dart';
 import 'source_filter_widgets.dart';
 import 'package:xxread/book_sources/models/registered_book_source.dart';
 
@@ -40,12 +41,49 @@ class _SourcePicker extends StatefulWidget {
 }
 
 class _SourcePickerState extends State<_SourcePicker> {
+  final _registry = BookSourceRegistry();
+  late List<RegisteredBookSource> _sources = [...widget.sources]
+    ..sort(BookSourceRegistry.compareSources);
+  bool _savingFavorite = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _refreshFavorites();
+  }
+
+  Future<void> _refreshFavorites() async {
+    final saved = await _registry.load();
+    if (!mounted) return;
+    _applySavedSources(saved);
+  }
+
+  void _applySavedSources(List<RegisteredBookSource> saved) {
+    final byId = {for (final source in saved) source.id: source};
+    setState(
+      () => _sources =
+          _sources.map((source) => byId[source.id] ?? source).toList()
+            ..sort(BookSourceRegistry.compareSources),
+    );
+  }
+
+  Future<void> _toggleFavorite(RegisteredBookSource source) async {
+    if (_savingFavorite) return;
+    setState(() => _savingFavorite = true);
+    try {
+      final saved = await _registry.setFavorite(source.id, !source.favorite);
+      if (mounted) _applySavedSources(saved);
+    } finally {
+      if (mounted) setState(() => _savingFavorite = false);
+    }
+  }
+
   late String? _selected = widget.selectedId;
   String _query = '';
 
   @override
   Widget build(BuildContext context) {
-    final matches = widget.sources.where((source) {
+    final matches = _sources.where((source) {
       final text = '${source.name} ${source.apiBaseUrl.host}'.toLowerCase();
       return text.contains(_query);
     }).toList();
@@ -132,11 +170,21 @@ class _SourcePickerState extends State<_SourcePicker> {
         );
       }
       final source = matches[index - (widget.allowAll ? 2 : 1)];
-      return _row(source.id, source.name, source.apiBaseUrl.host);
+      return _row(
+        source.id,
+        source.name,
+        source.apiBaseUrl.host,
+        source: source,
+      );
     },
   );
 
-  Widget _row(String? id, String title, String subtitle) => ListTile(
+  Widget _row(
+    String? id,
+    String title,
+    String subtitle, {
+    RegisteredBookSource? source,
+  }) => ListTile(
     key: ValueKey('sourcePicker-${id ?? 'all'}'),
     selected: _selected == id,
     dense: true,
@@ -148,7 +196,24 @@ class _SourcePickerState extends State<_SourcePicker> {
     leading: const Icon(Icons.language_rounded, size: 18),
     title: Text(title, maxLines: 2, overflow: TextOverflow.ellipsis),
     subtitle: Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis),
-    trailing: _selected == id ? const Icon(Icons.check_rounded) : null,
+    trailing: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (_selected == id) const Icon(Icons.check_rounded, size: 20),
+        if (source != null)
+          IconButton(
+            key: ValueKey('source-favorite-${source.id}'),
+            tooltip: source.favorite ? '取消收藏' : '收藏并置顶',
+            onPressed: _savingFavorite ? null : () => _toggleFavorite(source),
+            icon: Icon(
+              source.favorite ? Icons.star_rounded : Icons.star_border_rounded,
+              color: source.favorite
+                  ? Theme.of(context).colorScheme.primary
+                  : null,
+            ),
+          ),
+      ],
+    ),
     onTap: () => setState(() => _selected = id),
   );
 }

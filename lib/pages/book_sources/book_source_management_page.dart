@@ -274,12 +274,20 @@ class _BookSourceManagementPageState extends State<BookSourceManagementPage> {
       (s) => '${s.name} ${s.apiBaseUrl.host}'.toLowerCase().contains(_filter),
     );
     final orsp = filtered
+        .where((source) => !source.favorite)
         .where((source) => source.sourceProtocol == BookSourceProtocolKind.orsp)
         .toList(growable: false);
     final additional = filtered
+        .where((source) => !source.favorite)
         .where((source) => source.sourceProtocol != BookSourceProtocolKind.orsp)
         .toList(growable: false);
     return [
+      if (filtered.any((source) => source.favorite))
+        ..._buildSourceGroup(
+          title: '收藏置顶',
+          sources: filtered.where((source) => source.favorite).toList(),
+          additionalProtocolsEnabled: additionalProtocolsEnabled,
+        ),
       if (orsp.isNotEmpty)
         ..._buildSourceGroup(
           title: context.l10n.bookSourcesProtocolGroupOrsp,
@@ -663,10 +671,15 @@ class _BookSourceManagementPageState extends State<BookSourceManagementPage> {
     return PopupMenuButton<String>(
       tooltip: context.l10n.bookSourcesRemove,
       onSelected: (value) {
+        if (value == 'favorite') _toggleFavorite(source);
         if (value == 'rights') _showSourceRightsDialog(source);
         if (value == 'remove') _confirmRemoveSource(source);
       },
       itemBuilder: (context) => [
+        PopupMenuItem(
+          value: 'favorite',
+          child: Text(source.favorite ? '取消收藏' : '收藏并置顶'),
+        ),
         if (source.sourceProtocol == BookSourceProtocolKind.orsp)
           PopupMenuItem(
             value: 'rights',
@@ -684,6 +697,11 @@ class _BookSourceManagementPageState extends State<BookSourceManagementPage> {
         ),
       ],
     );
+  }
+
+  Future<void> _toggleFavorite(RegisteredBookSource source) async {
+    final sources = await _registry.setFavorite(source.id, !source.favorite);
+    if (mounted) setState(() => _sources = sources);
   }
 
   Widget _buildSourceIcon(RegisteredBookSource source, {double size = 48}) {

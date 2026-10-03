@@ -43,7 +43,7 @@ class BookSourceRegistry {
           // Skip a damaged entry instead of making the whole registry unusable.
         }
       }
-      sources.sort((a, b) => a.name.compareTo(b.name));
+      sources.sort(compareSources);
       if (!filterUnverified) return sources;
       return sources
           .where(
@@ -111,6 +111,7 @@ class BookSourceRegistry {
           capabilities: source.capabilities,
           maxCatalogPageSize: source.maxCatalogPageSize,
           enabled: previous.enabled,
+          favorite: previous.favorite,
           addedAt: previous.addedAt,
           sourceProtocol: source.sourceProtocol,
           sourceConfig: source.sourceConfig,
@@ -170,6 +171,7 @@ class BookSourceRegistry {
           capabilities: source.capabilities,
           maxCatalogPageSize: source.maxCatalogPageSize,
           enabled: previous.enabled,
+          favorite: previous.favorite,
           addedAt: previous.addedAt,
           sourceProtocol: source.sourceProtocol,
           sourceConfig: source.sourceConfig,
@@ -180,6 +182,26 @@ class BookSourceRegistry {
       return load();
     });
   }
+
+  static int compareSources(RegisteredBookSource a, RegisteredBookSource b) {
+    if (a.favorite != b.favorite) return a.favorite ? -1 : 1;
+    final name = a.name.compareTo(b.name);
+    return name == 0 ? a.id.compareTo(b.id) : name;
+  }
+
+  Future<List<RegisteredBookSource>> setFavorite(String id, bool favorite) =>
+      _mutate(() async {
+        final sources = (await _load(filterUnverified: false))
+            .map(
+              (source) => source.id == id
+                  ? source.copyWith(favorite: favorite)
+                  : source,
+            )
+            .toList();
+        await _save(sources);
+        _changesController.add(null);
+        return load();
+      });
 
   Future<List<RegisteredBookSource>> setEnabled(String id, bool enabled) async {
     return _mutate(() async {

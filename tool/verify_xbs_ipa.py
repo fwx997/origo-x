@@ -26,6 +26,7 @@ def verify(package, label):
             '长按选中文字', '左侧边缘滑动返回', '滑动时隐藏操作栏',
             '阅读底部栏', '检查更新', '关联本地书',
             '选择一个站点开始浏览', '查看失败详情',
+            '收藏并置顶', '取消收藏',
         ]
         for text in required:
             assert any(text.encode(enc) in binary for enc in ('utf-8', 'utf-16-le')), text

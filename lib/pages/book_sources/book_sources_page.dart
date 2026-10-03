@@ -461,50 +461,6 @@ class _BookSourcesPageState extends State<BookSourcesPage> {
     }
   }
 
-  Future<void> _openCategoryPicker(List<_SourcedCategory> categories) async {
-    final size = MediaQuery.sizeOf(context);
-    final picker = _CategoryPickerPanel(
-      categories: categories,
-      selectedCategory: _selectedCategory,
-      title: context.l10n.discoverCategories,
-      searchLabel: context.l10n.search,
-      noResultsLabel: context.l10n.bookSourcesNoResults,
-    );
-    final _SourcedCategory? selected;
-    if (size.width >= 720) {
-      selected = await showDialog<_SourcedCategory>(
-        context: context,
-        builder: (context) => Dialog(
-          clipBehavior: Clip.antiAlias,
-          child: SizedBox(
-            width: (size.width - 48).clamp(320, 520).toDouble(),
-            height: (size.height - 48).clamp(320, 680).toDouble(),
-            child: picker,
-          ),
-        ),
-      );
-    } else {
-      selected = await showModalBottomSheet<_SourcedCategory>(
-        context: context,
-        isScrollControlled: true,
-        useSafeArea: true,
-        clipBehavior: Clip.antiAlias,
-        builder: (context) => SizedBox(
-          height: MediaQuery.sizeOf(context).height * 0.82,
-          child: Padding(
-            padding: EdgeInsets.only(
-              bottom: MediaQuery.viewInsetsOf(context).bottom,
-            ),
-            child: picker,
-          ),
-        ),
-      );
-    }
-    if (selected != null && mounted && selected != _selectedCategory) {
-      await _selectCategory(selected);
-    }
-  }
-
   void _openSearch() {
     _findSources(null);
   }
@@ -663,6 +619,7 @@ class _BookSourcesPageState extends State<BookSourcesPage> {
             style: Theme.of(context).textTheme.titleSmall,
           ),
         ),
+        if (selected.isNotEmpty) _favoriteButton(selected.first),
         TextButton(
           style: sourceTextActionStyle(context),
           onPressed: _openSearch,
@@ -824,10 +781,7 @@ class _BookSourcesPageState extends State<BookSourcesPage> {
     final selected = _selectedCategory ?? categories.first;
     final slivers = <Widget>[
       _paddedSectionSliver(
-        _CategoryPickerButton(
-          category: selected,
-          onTap: () => _openCategoryPicker(categories),
-        ),
+        _buildCategoryTabs(categories, selected),
         bottomPadding: 2,
       ),
       if (selected.category.filterGroups.isNotEmpty)
@@ -883,6 +837,52 @@ class _BookSourcesPageState extends State<BookSourcesPage> {
     return slivers;
   }
 
+  Widget _buildCategoryTabs(
+    List<_SourcedCategory> categories,
+    _SourcedCategory selected,
+  ) => SizedBox(
+    height: 48 * MediaQuery.textScalerOf(context).scale(14) / 14,
+    child: ListView.separated(
+      key: const ValueKey('discover-category-tabs'),
+      scrollDirection: Axis.horizontal,
+      itemCount: categories.length,
+      separatorBuilder: (_, _) => const SizedBox(width: 20),
+      itemBuilder: (_, index) => _categoryTab(categories[index], selected.id),
+    ),
+  );
+
+  Widget _categoryTab(_SourcedCategory category, String selectedId) {
+    final selected = category.id == selectedId;
+    final scheme = Theme.of(context).colorScheme;
+    return Semantics(
+      selected: selected,
+      button: true,
+      child: InkWell(
+        key: ValueKey('discover-category-${category.id}'),
+        onTap: () => unawaited(_selectCategory(category)),
+        child: Container(
+          alignment: Alignment.center,
+          padding: const EdgeInsets.symmetric(horizontal: 6),
+          decoration: BoxDecoration(
+            border: Border(
+              bottom: BorderSide(
+                color: selected ? scheme.primary : Colors.transparent,
+                width: 2,
+              ),
+            ),
+          ),
+          child: Text(
+            category.name,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: selected ? scheme.primary : scheme.onSurfaceVariant,
+              fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildCategoryFilters(_SourcedCategory category) {
     final groups = category.category.filterGroups;
     return Column(
@@ -900,7 +900,7 @@ class _BookSourcesPageState extends State<BookSourcesPage> {
     int index,
   ) => SourceFilterControl<String>(
     controlKey: ValueKey('categoryFilter:${group.id}'),
-    label: group.name == '筛选' ? '筛选 ${index + 1}' : group.name,
+    label: group.name == '筛选' ? '' : group.name,
     value: _categoryFilters[group.id] ?? group.options.first.value,
     items: group.options
         .map(
@@ -1045,8 +1045,25 @@ class _BookSourcesPageState extends State<BookSourcesPage> {
       maxLines: 1,
       overflow: TextOverflow.ellipsis,
     ),
-    trailing: const Icon(Icons.chevron_right_rounded, size: 20),
+    trailing: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _favoriteButton(source),
+        const Icon(Icons.chevron_right_rounded, size: 20),
+      ],
+    ),
     onTap: () => _changeSourceScope(source.id),
+  );
+
+  Widget _favoriteButton(RegisteredBookSource source) => IconButton(
+    key: ValueKey('discover-favorite-${source.id}'),
+    tooltip: source.favorite ? '取消收藏' : '收藏并置顶',
+    icon: Icon(
+      source.favorite ? Icons.star_rounded : Icons.star_border_rounded,
+      size: 20,
+      color: source.favorite ? Theme.of(context).colorScheme.primary : null,
+    ),
+    onPressed: () => _registry.setFavorite(source.id, !source.favorite),
   );
 
   Widget _buildLoadFailure(String error, Future<void> Function() retry) =>
@@ -1209,209 +1226,4 @@ class _SourcedCategory {
   String get name => category.name;
 
   const _SourcedCategory({required this.source, required this.category});
-}
-
-class _CategoryPickerButton extends StatelessWidget {
-  final _SourcedCategory category;
-  final VoidCallback onTap;
-
-  const _CategoryPickerButton({required this.category, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      key: const Key('bookSourceCategoryPickerButton'),
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(6),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        child: Row(
-          children: [
-            Expanded(
-              child: Text(
-                category.name,
-                style: Theme.of(
-                  context,
-                ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Flexible(
-              child: Text(
-                category.source.name,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-            ),
-            const Icon(Icons.expand_more, size: 18),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _CategoryPickerPanel extends StatefulWidget {
-  final List<_SourcedCategory> categories;
-  final _SourcedCategory? selectedCategory;
-  final String title;
-  final String searchLabel;
-  final String noResultsLabel;
-
-  const _CategoryPickerPanel({
-    required this.categories,
-    required this.selectedCategory,
-    required this.title,
-    required this.searchLabel,
-    required this.noResultsLabel,
-  });
-
-  @override
-  State<_CategoryPickerPanel> createState() => _CategoryPickerPanelState();
-}
-
-class _CategoryPickerPanelState extends State<_CategoryPickerPanel> {
-  final TextEditingController _searchController = TextEditingController();
-  String _query = '';
-
-  @override
-  void dispose() {
-    _searchController.dispose();
-    super.dispose();
-  }
-
-  List<_CategoryPickerEntry> _entries() {
-    final query = _query.trim().toLowerCase();
-    final matches = widget.categories.where((category) {
-      if (query.isEmpty) return true;
-      return category.name.toLowerCase().contains(query) ||
-          category.source.name.toLowerCase().contains(query);
-    });
-    final entries = <_CategoryPickerEntry>[];
-    String? sourceId;
-    for (final category in matches) {
-      if (category.source.id != sourceId) {
-        sourceId = category.source.id;
-        entries.add(_CategoryPickerEntry.header(category.source.name));
-      }
-      entries.add(_CategoryPickerEntry.category(category));
-    }
-    return entries;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final entries = _entries();
-    final scheme = Theme.of(context).colorScheme;
-    return Material(
-      color: scheme.surface,
-      child: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 18, 8, 10),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    widget.title,
-                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ),
-                IconButton(
-                  tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
-                  onPressed: () => Navigator.of(context).pop(),
-                  icon: const Icon(Icons.close_rounded),
-                ),
-              ],
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-            child: TextField(
-              key: const Key('bookSourceCategorySearchField'),
-              controller: _searchController,
-              autofocus: false,
-              textInputAction: TextInputAction.search,
-              onChanged: (value) => setState(() => _query = value),
-              decoration: InputDecoration(
-                hintText: widget.searchLabel,
-                prefixIcon: const Icon(Icons.search_rounded),
-                suffixIcon: _query.isEmpty
-                    ? null
-                    : IconButton(
-                        onPressed: () {
-                          _searchController.clear();
-                          setState(() => _query = '');
-                        },
-                        icon: const Icon(Icons.clear_rounded),
-                      ),
-                border: const OutlineInputBorder(),
-              ),
-            ),
-          ),
-          const Divider(height: 1),
-          Expanded(
-            child: entries.isEmpty
-                ? Center(
-                    child: Text(
-                      widget.noResultsLabel,
-                      style: TextStyle(color: scheme.onSurfaceVariant),
-                    ),
-                  )
-                : ListView.builder(
-                    key: const Key('bookSourceCategoryLazyList'),
-                    itemCount: entries.length,
-                    itemBuilder: (context, index) {
-                      final entry = entries[index];
-                      final category = entry.category;
-                      if (category == null) {
-                        return Padding(
-                          padding: const EdgeInsets.fromLTRB(20, 18, 20, 6),
-                          child: Text(
-                            entry.header!,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context).textTheme.labelLarge
-                                ?.copyWith(
-                                  color: scheme.primary,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                          ),
-                        );
-                      }
-                      final selected = category == widget.selectedCategory;
-                      return ListTile(
-                        key: Key(
-                          'bookSourceCategory-${category.source.id}-${category.id}',
-                        ),
-                        selected: selected,
-                        title: Text(
-                          category.name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        trailing: selected
-                            ? Icon(Icons.check_rounded, color: scheme.primary)
-                            : null,
-                        onTap: () => Navigator.of(context).pop(category),
-                      );
-                    },
-                  ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _CategoryPickerEntry {
-  final String? header;
-  final _SourcedCategory? category;
-
-  const _CategoryPickerEntry.header(this.header) : category = null;
-
-  const _CategoryPickerEntry.category(this.category) : header = null;
 }

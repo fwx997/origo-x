@@ -18,6 +18,7 @@ class RegisteredBookSource {
   final List<String> languages;
   final Set<String> capabilities;
   final bool enabled;
+  final bool favorite;
   final DateTime addedAt;
   final BookSourceProtocolKind sourceProtocol;
   final Map<String, dynamic>? sourceConfig;
@@ -36,6 +37,7 @@ class RegisteredBookSource {
     required this.languages,
     required this.capabilities,
     required this.enabled,
+    this.favorite = false,
     required this.addedAt,
     this.iconUrl,
     this.websiteUrl,
@@ -128,6 +130,7 @@ class RegisteredBookSource {
           .toSet(),
       maxCatalogPageSize: maxCatalogPageSize,
       enabled: json['enabled'] as bool? ?? true,
+      favorite: json['favorite'] == true,
       addedAt:
           DateTime.tryParse(json['addedAt'] as String? ?? '') ?? DateTime.now(),
       sourceProtocol: sourceProtocol,
@@ -152,12 +155,13 @@ class RegisteredBookSource {
     'capabilities': capabilities.toList()..sort(),
     if (maxCatalogPageSize != null) 'maxCatalogPageSize': maxCatalogPageSize,
     'enabled': enabled,
+    'favorite': favorite,
     'addedAt': addedAt.toIso8601String(),
     'sourceProtocol': sourceProtocol.name,
     if (sourceConfig != null) 'sourceConfig': sourceConfig,
   };
 
-  RegisteredBookSource copyWith({bool? enabled}) {
+  RegisteredBookSource copyWith({bool? enabled, bool? favorite}) {
     return RegisteredBookSource(
       id: id,
       name: name,
@@ -175,6 +179,7 @@ class RegisteredBookSource {
       capabilities: capabilities,
       maxCatalogPageSize: maxCatalogPageSize,
       enabled: enabled ?? this.enabled,
+      favorite: favorite ?? this.favorite,
       addedAt: addedAt,
       sourceProtocol: sourceProtocol,
       sourceConfig: sourceConfig,
