@@ -100,6 +100,7 @@ void main() {
         );
         expect(bodies, isNotEmpty);
         for (final body in bodies) {
+          expect(body.selectionEnabled, isFalse);
           expect(body.bodyStyle.fontWeight, FontWeight.w700);
           expect(body.bodyStyle.color?.a, closeTo(0.5, 0.01));
         }

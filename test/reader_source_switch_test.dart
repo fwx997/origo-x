@@ -1,6 +1,10 @@
 import 'dart:convert';
+import 'dart:io';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:xxread/book_sources/models/registered_book_source.dart';
@@ -23,6 +27,131 @@ import 'package:xxread/widgets/reader_settings_controls.dart';
 
 void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
+
+  testWidgets('unshelved reader adds the book instead of creating a bookmark', (
+    tester,
+  ) async {
+    final client = _Client();
+    addTearDown(client.close);
+    final shelf = _Shelf(client: client)
+      ..saved = Book(
+        id: 90,
+        title: '本地下载',
+        filePath: 'local.txt',
+        format: 'txt',
+      );
+    if (Platform.environment.containsKey('READER_CAPTURE_UI')) {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.runAsync(() async {
+        final loader = FontLoader('CaptureFont')
+          ..addFont(
+            File(
+              Platform.environment['READER_CAPTURE_FONT']!,
+            ).readAsBytes().then((bytes) => ByteData.sublistView(bytes)),
+          );
+        await loader.load();
+        final icons = FontLoader('MaterialIcons')
+          ..addFont(
+            File(
+              '../origo_sources/_runtime/flutter-sdk/bin/cache/artifacts/material_fonts/materialicons-regular.otf',
+            ).readAsBytes().then((bytes) => ByteData.sublistView(bytes)),
+          );
+        await icons.load();
+      });
+    }
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData(fontFamily: 'CaptureFont'),
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: BookSourceReaderPage(
+          source: _source('A'),
+          book: _book('A'),
+          client: client,
+          shelfService: shelf,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    var chrome = tester.widget<ReaderChromeOverlay>(
+      find.byType(ReaderChromeOverlay),
+    );
+    expect(chrome.addToShelf, isTrue);
+    expect(
+      tester
+          .widgetList<ReaderAnnotatedTextPage>(
+            find.byType(ReaderAnnotatedTextPage),
+          )
+          .every((page) => !page.selectionEnabled),
+      isTrue,
+    );
+    chrome.onSettings();
+    await tester.pumpAndSettle();
+    final settings = tester.widget<ReaderSettingsSheet>(
+      find.byType(ReaderSettingsSheet),
+    );
+    await tester.tap(find.text(settings.tabPagingLabel));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('reader-text-selection-switch')).hitTestable(),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('reader-edge-swipe-back-switch')).hitTestable(),
+      findsOneWidget,
+    );
+    expect(
+      find
+          .byKey(const ValueKey('reader-hide-bars-on-swipe-switch'))
+          .hitTestable(),
+      findsOneWidget,
+    );
+    if (Platform.environment.containsKey('READER_CAPTURE_UI')) {
+      await tester.runAsync(() async {
+        final boundary = tester.renderObject<RenderRepaintBoundary>(
+          find
+              .ancestor(
+                of: find.byType(ReaderSettingsSheet),
+                matching: find.byType(RepaintBoundary),
+              )
+              .first,
+        );
+        final image = await boundary.toImage();
+        final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
+        await File(
+          '.dart_tool/reader-enhancements-ui/reader-interactions.png',
+        ).writeAsBytes(bytes!.buffer.asUint8List());
+        image.dispose();
+      });
+    }
+    expect(settings.textSelectionEnabled, isFalse);
+    expect(settings.edgeSwipeBackEnabled, isTrue);
+    expect(settings.hideBarsOnVerticalSwipe, isTrue);
+    settings.onTextSelectionChanged!(true);
+    settings.onEdgeSwipeBackChanged!(false);
+    settings.onHideBarsOnVerticalSwipeChanged!(false);
+    await tester.pumpAndSettle();
+    Navigator.of(tester.element(find.byType(ReaderSettingsSheet))).pop();
+    await tester.pumpAndSettle();
+    expect(
+      tester
+          .widgetList<ReaderAnnotatedTextPage>(
+            find.byType(ReaderAnnotatedTextPage),
+          )
+          .every((page) => page.selectionEnabled),
+      isTrue,
+    );
+    chrome.onBookmark!();
+    await tester.pumpAndSettle();
+    chrome = tester.widget<ReaderChromeOverlay>(
+      find.byType(ReaderChromeOverlay),
+    );
+    expect(chrome.addToShelf, isFalse);
+    expect(shelf.addCount, 1);
+    expect(chrome.bookmarked, isFalse);
+  });
 
   test(
     'chapter titles align across numbering changes and shifted catalogs',
@@ -155,6 +284,12 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(find.byType(ReaderSettingsSheet), findsOneWidget);
+      expect(
+        find
+            .byKey(const ValueKey('reader-chapter-progress-toggle'))
+            .hitTestable(),
+        findsOneWidget,
+      );
       await tester.tap(find.text('Text'));
       await tester.pumpAndSettle();
       for (final entry in {
@@ -271,11 +406,36 @@ BookSourceBook _book(String id) => BookSourceBook(
 
 class _Shelf extends BookSourceShelfService {
   _Shelf({required super.client});
+  Book? saved;
+  int addCount = 0;
+  @override
+  Future<Book> addOnline({
+    required RegisteredBookSource source,
+    required BookSourceBook book,
+  }) async {
+    addCount++;
+    return saved = Book(
+      id: 91,
+      title: book.title,
+      author: book.author,
+      filePath: '',
+      format: 'source',
+      storageType: 'online',
+    );
+  }
+
+  @override
+  Future<void> updateShelfProgress({
+    required int shelfBookId,
+    required int chapterIndex,
+    required int chapterCount,
+    required double chapterProgress,
+  }) async {}
   @override
   Future<Book?> findShelfBook({
     required String sourceId,
     required String sourceBookId,
-  }) async => null;
+  }) async => saved;
 }
 
 class _Client extends BookSourceClient {

@@ -48,6 +48,7 @@ class ReaderAnnotatedTextPage extends StatefulWidget {
     this.onInteractionChanged,
     this.onAskAiSelection,
     this.fillAvailableSpace = true,
+    this.selectionEnabled = true,
   });
 
   final ReaderTextPage page;
@@ -71,6 +72,7 @@ class ReaderAnnotatedTextPage extends StatefulWidget {
   final Future<void> Function(ReaderSelectionSnapshot selection)?
   onAskAiSelection;
   final bool fillAvailableSpace;
+  final bool selectionEnabled;
 
   @override
   State<ReaderAnnotatedTextPage> createState() =>
@@ -94,6 +96,11 @@ class _ReaderAnnotatedTextPageState extends State<ReaderAnnotatedTextPage> {
   @override
   void didUpdateWidget(covariant ReaderAnnotatedTextPage oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.selectionEnabled && !widget.selectionEnabled) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) widget.onInteractionChanged?.call(false);
+      });
+    }
     final activeIds = widget.annotations
         .where((annotation) => annotation.type == readerAnnotationTypeNote)
         .map((annotation) => annotation.annotationId)
@@ -256,19 +263,22 @@ class _ReaderAnnotatedTextPageState extends State<ReaderAnnotatedTextPage> {
 
   @override
   Widget build(BuildContext context) {
-    final text = SelectionArea(
-      contextMenuBuilder: _buildSelectionToolbar,
-      child: SelectionListener(
-        selectionNotifier: _selectionNotifier,
-        child: ReaderTextPageContent(
-          page: widget.page,
-          chapterTitle: widget.chapterTitle,
-          bodyStyle: widget.bodyStyle,
-          flowStyle: widget.flowStyle,
-          sourceSpanBuilder: _annotatedSpan,
-        ),
-      ),
+    final content = ReaderTextPageContent(
+      page: widget.page,
+      chapterTitle: widget.chapterTitle,
+      bodyStyle: widget.bodyStyle,
+      flowStyle: widget.flowStyle,
+      sourceSpanBuilder: _annotatedSpan,
     );
+    final text = widget.selectionEnabled
+        ? SelectionArea(
+            contextMenuBuilder: _buildSelectionToolbar,
+            child: SelectionListener(
+              selectionNotifier: _selectionNotifier,
+              child: content,
+            ),
+          )
+        : content;
     return widget.fillAvailableSpace
         ? Stack(fit: StackFit.expand, children: [text])
         : text;

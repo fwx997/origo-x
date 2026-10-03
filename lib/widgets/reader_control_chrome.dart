@@ -6,6 +6,7 @@ import '../core/reader/reader_leaf_status.dart';
 import '../utils/glass_config.dart';
 import '../utils/reader_themes.dart';
 import 'reader_top_information_bar.dart';
+import 'reader_toolbar_preferences.dart';
 
 typedef ReaderStatusBuilder =
     Widget Function(BuildContext context, TextStyle? style, Key? key);
@@ -33,6 +34,7 @@ class ReaderChromeOverlay extends StatelessWidget {
     this.onAskAi,
     this.askAiTooltip,
     this.bookmarkBusy = false,
+    this.addToShelf = false,
     this.topKey,
     this.bottomKey,
     this.statusKey,
@@ -69,6 +71,7 @@ class ReaderChromeOverlay extends StatelessWidget {
   final bool bookmarked;
   final bool readAloudActive;
   final bool bookmarkBusy;
+  final bool addToShelf;
   final Key? topKey;
   final Key? bottomKey;
   final Key? statusKey;
@@ -212,76 +215,19 @@ class ReaderChromeOverlay extends StatelessWidget {
                         palette: palette,
                         onPressed: bookmarkBusy ? null : onBookmark,
                         tooltip: bookmarkTooltip,
-                        icon: bookmarked
+                        icon: addToShelf
+                            ? Icons.library_add_outlined
+                            : bookmarked
                             ? Icons.bookmark_rounded
                             : Icons.bookmark_border_rounded,
                       ),
-                      if (onMore != null)
-                        ReaderControlIconButton(
-                          key: const ValueKey('reader-book-settings'),
-                          palette: palette,
-                          onPressed: onMore,
-                          tooltip: '书籍设置',
-                          icon: Icons.more_horiz_rounded,
-                        ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-        AnimatedPositioned(
-          key: bottomKey,
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeOutBack,
-          left: 22,
-          right: 22,
-          bottom: visible ? 16 : -110,
-          child: SafeArea(
-            top: false,
-            child: ReaderControlBar(
-              palette: palette,
-              isTopBar: false,
-              child: SizedBox(
-                height: 64,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 9,
-                    vertical: 9,
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    children: [
                       ReaderControlIconButton(
+                        key: const ValueKey('reader-book-settings'),
                         palette: palette,
-                        onPressed: onTableOfContents,
-                        tooltip: tableOfContentsTooltip,
-                        icon: Icons.format_list_bulleted_rounded,
+                        onPressed: onMore ?? onSettings,
+                        tooltip: onMore != null ? '书籍设置' : settingsTooltip,
+                        icon: Icons.more_horiz_rounded,
                       ),
-                      if (onReadAloud != null)
-                        ReaderControlIconButton(
-                          palette: palette,
-                          onPressed: onReadAloud,
-                          tooltip: readAloudTooltip ?? '',
-                          icon: readAloudActive
-                              ? Icons.graphic_eq_rounded
-                              : Icons.headphones_rounded,
-                        ),
-                      if (onAskAi != null)
-                        ReaderControlIconButton(
-                          palette: palette,
-                          onPressed: onAskAi,
-                          tooltip: askAiTooltip ?? '',
-                          icon: Icons.auto_awesome_outlined,
-                        ),
-                      if (showSettingsAction)
-                        ReaderControlIconButton(
-                          palette: palette,
-                          onPressed: onSettings,
-                          tooltip: settingsTooltip,
-                          icon: Icons.tune_rounded,
-                        ),
                     ],
                   ),
                 ),
@@ -289,6 +235,87 @@ class ReaderChromeOverlay extends StatelessWidget {
             ),
           ),
         ),
+        ReaderToolbarBuilder(builder: _bottomBar),
+      ],
+    );
+  }
+
+  Widget _bottomBar(BuildContext context, ReaderToolbarPreferences prefs) {
+    final actions = prefs.order
+        .where(
+          (action) =>
+              !prefs.hidden.contains(action) &&
+              switch (action) {
+                ReaderToolbarAction.aloud => onReadAloud != null,
+                ReaderToolbarAction.ai => onAskAi != null,
+                ReaderToolbarAction.settings => showSettingsAction,
+                ReaderToolbarAction.catalog => true,
+              },
+        )
+        .toList();
+    if (!prefs.enabled || actions.isEmpty) return const SizedBox.shrink();
+    return AnimatedPositioned(
+      key: bottomKey,
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeOutBack,
+      left: 22,
+      right: 22,
+      bottom: visible ? 16 : -150,
+      child: SafeArea(
+        top: false,
+        child: ReaderControlBar(
+          palette: palette,
+          isTopBar: false,
+          child: Padding(
+            padding: const EdgeInsets.all(9),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                for (final action in actions)
+                  _bottomAction(action, prefs.labels),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _bottomAction(ReaderToolbarAction action, bool labels) {
+    final (callback, label, icon) = switch (action) {
+      ReaderToolbarAction.catalog => (
+        onTableOfContents,
+        tableOfContentsTooltip,
+        Icons.format_list_bulleted_rounded,
+      ),
+      ReaderToolbarAction.aloud => (
+        onReadAloud,
+        readAloudTooltip ?? action.label,
+        readAloudActive ? Icons.graphic_eq_rounded : Icons.headphones_rounded,
+      ),
+      ReaderToolbarAction.ai => (
+        onAskAi,
+        askAiTooltip ?? action.label,
+        Icons.auto_awesome_outlined,
+      ),
+      ReaderToolbarAction.settings => (
+        onSettings,
+        settingsTooltip,
+        Icons.tune_rounded,
+      ),
+    };
+    final button = ReaderControlIconButton(
+      palette: palette,
+      onPressed: callback,
+      tooltip: label,
+      icon: icon,
+    );
+    if (!labels) return button;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        button,
+        Text(action.label, style: TextStyle(fontSize: 10, color: palette.text)),
       ],
     );
   }

@@ -84,6 +84,13 @@ class BookSourceChapterCache {
   /// source. Once the cached catalog is old enough, a refresh is started in
   /// the background so the next open sees additions without delaying this
   /// one. Catalogs remain usable while offline for up to 30 days.
+  Future<List<BookSourceChapter>> refreshChapterCatalog({
+    required String sourceId,
+    required String sourceRevision,
+    required String bookId,
+    required Future<List<BookSourceChapter>> Function() loader,
+  }) => _loadCatalog(_key(sourceId, sourceRevision, bookId, 'catalog'), loader);
+
   Future<List<BookSourceChapter>> getChapterCatalogOrLoad({
     required String sourceId,
     String sourceRevision = '',

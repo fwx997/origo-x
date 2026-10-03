@@ -18,15 +18,25 @@ class BookRenameService {
   /// 若书籍存在本地文件，会一并把磁盘文件重命名为新书名（保留扩展名），
   /// 并在目标文件名已存在时自动追加序号避免覆盖。仅在线、尚未下载的书籍
   /// 没有本地文件，只更新数据库中的书名。
-  Future<Book> rename(Book book, String newTitle) async {
+  Future<Book> rename(Book book, String newTitle, {String? newAuthor}) async {
     final title = newTitle.trim();
     if (title.isEmpty) {
       throw ArgumentError('书名不能为空');
     }
-    var updated = book.copyWith(title: title);
+    final author = newAuthor?.trim() ?? book.author;
+    var updated = book.copyWith(
+      title: title,
+      author: author.isEmpty ? '未知' : author,
+    );
+    if (book.sourceBookJson != null) {
+      final metadata = jsonDecode(book.sourceBookJson!) as Map<String, dynamic>;
+      metadata['title'] = updated.title;
+      metadata['author'] = updated.author;
+      updated = updated.copyWith(sourceBookJson: jsonEncode(metadata));
+    }
 
     final currentPath = book.filePath.trim();
-    if (currentPath.isNotEmpty) {
+    if (title != book.title && currentPath.isNotEmpty) {
       final file = File(currentPath);
       if (await file.exists()) {
         final newPath = await _uniqueRenamedPath(file, title);

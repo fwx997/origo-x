@@ -7,6 +7,7 @@ import '../core/reader/reader_custom_theme.dart';
 import '../core/reader/reader_system_ui.dart';
 import '../utils/reader_themes.dart';
 import 'reader_theme_background.dart';
+import 'reader_toolbar_preferences.dart';
 
 class ReaderSettingsSheet extends StatefulWidget {
   const ReaderSettingsSheet({
@@ -50,6 +51,12 @@ class ReaderSettingsSheet extends StatefulWidget {
     this.dimNightText = true,
     this.fontWeight = 400,
     this.showChapterProgress = true,
+    this.textSelectionEnabled = false,
+    this.edgeSwipeBackEnabled = true,
+    this.hideBarsOnVerticalSwipe = true,
+    this.onTextSelectionChanged,
+    this.onEdgeSwipeBackChanged,
+    this.onHideBarsOnVerticalSwipeChanged,
     this.onTextBrightnessChanged,
     this.onDimNightTextChanged,
     this.onFontWeightChanged,
@@ -126,6 +133,12 @@ class ReaderSettingsSheet extends StatefulWidget {
   final bool dimNightText;
   final int fontWeight;
   final bool showChapterProgress;
+  final bool textSelectionEnabled;
+  final bool edgeSwipeBackEnabled;
+  final bool hideBarsOnVerticalSwipe;
+  final ValueChanged<bool>? onTextSelectionChanged;
+  final ValueChanged<bool>? onEdgeSwipeBackChanged;
+  final ValueChanged<bool>? onHideBarsOnVerticalSwipeChanged;
   final ValueChanged<double>? onTextBrightnessChanged;
   final ValueChanged<bool>? onDimNightTextChanged;
   final ValueChanged<int>? onFontWeightChanged;
@@ -173,6 +186,9 @@ class _ReaderSettingsSheetState extends State<ReaderSettingsSheet> {
   late bool _dimNightText = widget.dimNightText;
   late int _fontWeight = widget.fontWeight;
   late bool _showChapterProgress = widget.showChapterProgress;
+  late bool _textSelectionEnabled = widget.textSelectionEnabled;
+  late bool _edgeSwipeBackEnabled = widget.edgeSwipeBackEnabled;
+  late bool _hideBarsOnVerticalSwipe = widget.hideBarsOnVerticalSwipe;
   late double _lineHeight = widget.lineHeight;
   late double _letterSpacing = widget.letterSpacing;
   late ReaderTextAlignment _textAlignment = widget.textAlignment;
@@ -461,6 +477,17 @@ class _ReaderSettingsSheetState extends State<ReaderSettingsSheet> {
       trailing: const Icon(Icons.chevron_right),
       onTap: widget.onTopBarStyleTap,
     ),
+    ListTile(
+      key: const ValueKey('reader-bottom-bar-settings'),
+      contentPadding: EdgeInsets.zero,
+      leading: const Icon(Icons.vertical_align_bottom_rounded),
+      title: const Text('阅读底部栏'),
+      subtitle: const Text('开关、按钮、文字与顺序'),
+      trailing: const Icon(Icons.chevron_right),
+      onTap: () => Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => const ReaderToolbarSettingsPage()),
+      ),
+    ),
     if (widget.onChapterProgressChanged != null)
       SwitchListTile(
         key: const ValueKey('reader-chapter-progress-toggle'),
@@ -477,6 +504,8 @@ class _ReaderSettingsSheetState extends State<ReaderSettingsSheet> {
   ];
 
   List<Widget> _pagingTabChildren() => [
+    _interactionSettings(),
+    const SizedBox(height: 12),
     ListTile(
       contentPadding: EdgeInsets.zero,
       leading: const Icon(Icons.swap_calls),
@@ -532,6 +561,51 @@ class _ReaderSettingsSheetState extends State<ReaderSettingsSheet> {
       },
     ),
   ];
+
+  Widget _interactionSettings() => Card(
+    margin: EdgeInsets.zero,
+    elevation: 0,
+    color: Theme.of(context).colorScheme.surfaceContainerLow,
+    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+    clipBehavior: Clip.antiAlias,
+    child: Column(
+      children: [
+        SwitchListTile(
+          key: const ValueKey('reader-text-selection-switch'),
+          secondary: const Icon(Icons.text_fields_rounded),
+          title: const Text('长按选中文字'),
+          subtitle: const Text('选中后可复制、划线和添加笔记'),
+          value: _textSelectionEnabled,
+          onChanged: (value) {
+            setState(() => _textSelectionEnabled = value);
+            widget.onTextSelectionChanged?.call(value);
+          },
+        ),
+        SwitchListTile(
+          key: const ValueKey('reader-edge-swipe-back-switch'),
+          secondary: const Icon(Icons.swipe_right_rounded),
+          title: const Text('左侧边缘滑动返回'),
+          subtitle: const Text('从屏幕左侧边缘向右滑动，退出阅读'),
+          value: _edgeSwipeBackEnabled,
+          onChanged: (value) {
+            setState(() => _edgeSwipeBackEnabled = value);
+            widget.onEdgeSwipeBackChanged?.call(value);
+          },
+        ),
+        SwitchListTile(
+          key: const ValueKey('reader-hide-bars-on-swipe-switch'),
+          secondary: const Icon(Icons.unfold_less_rounded),
+          title: const Text('滑动时隐藏操作栏'),
+          subtitle: const Text('上下滑动收起顶部和底部栏，轻点中央恢复'),
+          value: _hideBarsOnVerticalSwipe,
+          onChanged: (value) {
+            setState(() => _hideBarsOnVerticalSwipe = value);
+            widget.onHideBarsOnVerticalSwipeChanged?.call(value);
+          },
+        ),
+      ],
+    ),
+  );
 }
 
 enum _ReaderSettingsTab { theme, text, layout, paging }
@@ -792,7 +866,7 @@ class ReaderSettingsSheetFrame extends StatelessWidget {
         child: SafeArea(
           child: ConstrainedBox(
             constraints: BoxConstraints(
-              maxHeight: MediaQuery.sizeOf(context).height * 0.5,
+              maxHeight: MediaQuery.sizeOf(context).height * 0.78,
             ),
             child: Column(
               mainAxisSize: MainAxisSize.min,

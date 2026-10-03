@@ -15,11 +15,15 @@ class ReaderTapObserver extends StatefulWidget {
     required this.child,
     required this.onTap,
     this.enabled = true,
+    this.onVerticalSwipe,
+    this.onEdgeBack,
   });
 
   final Widget child;
   final ValueChanged<Offset> onTap;
   final bool enabled;
+  final VoidCallback? onVerticalSwipe;
+  final VoidCallback? onEdgeBack;
 
   @override
   State<ReaderTapObserver> createState() => _ReaderTapObserverState();
@@ -31,6 +35,8 @@ class _ReaderTapObserverState extends State<ReaderTapObserver> {
   Timer? _longPressTimer;
   bool _moved = false;
   bool _expired = false;
+  bool _verticalReported = false;
+  double _edgeDistance = 0;
 
   void _reset() {
     _pointer = null;
@@ -39,6 +45,7 @@ class _ReaderTapObserverState extends State<ReaderTapObserver> {
     _longPressTimer = null;
     _moved = false;
     _expired = false;
+    _verticalReported = false;
   }
 
   void _handleDown(PointerDownEvent event) {
@@ -58,6 +65,11 @@ class _ReaderTapObserverState extends State<ReaderTapObserver> {
     final origin = _origin;
     if (origin != null && (event.position - origin).distance >= kTouchSlop) {
       _moved = true;
+      final delta = event.position - origin;
+      if (!_verticalReported && delta.dy.abs() > delta.dx.abs()) {
+        _verticalReported = true;
+        widget.onVerticalSwipe?.call();
+      }
     }
   }
 
@@ -93,13 +105,46 @@ class _ReaderTapObserverState extends State<ReaderTapObserver> {
     super.dispose();
   }
 
+  void _finishEdgeSwipe(DragEndDetails details) {
+    final shouldExit =
+        _edgeDistance >= 72 ||
+        (_edgeDistance > 20 && (details.primaryVelocity ?? 0) > 600);
+    _edgeDistance = 0;
+    if (shouldExit && widget.enabled) widget.onEdgeBack?.call();
+  }
+
   @override
-  Widget build(BuildContext context) => Listener(
+  Widget build(BuildContext context) {
+    final content = Listener(
+      behavior: HitTestBehavior.translucent,
+      onPointerDown: _handleDown,
+      onPointerMove: _handleMove,
+      onPointerUp: _handleUp,
+      onPointerCancel: _handleCancel,
+      child: widget.child,
+    );
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        content,
+        if (widget.enabled && widget.onEdgeBack != null)
+          Positioned(
+            left: 0,
+            top: 0,
+            bottom: 0,
+            width: 22,
+            child: _edgeGesture(),
+          ),
+      ],
+    );
+  }
+
+  Widget _edgeGesture() => GestureDetector(
+    key: const ValueKey('reader-edge-swipe-back'),
     behavior: HitTestBehavior.translucent,
-    onPointerDown: _handleDown,
-    onPointerMove: _handleMove,
-    onPointerUp: _handleUp,
-    onPointerCancel: _handleCancel,
-    child: widget.child,
+    onHorizontalDragStart: (_) => _edgeDistance = 0,
+    onHorizontalDragUpdate: (details) => _edgeDistance += details.delta.dx,
+    onHorizontalDragEnd: _finishEdgeSwipe,
+    onHorizontalDragCancel: () => _edgeDistance = 0,
   );
 }

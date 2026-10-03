@@ -455,7 +455,7 @@ class _SourcedBookDetailsSheetState extends State<_SourcedBookDetailsSheet> {
         sourceId: widget.result.source.id,
         sourceBookId: _book.id,
       );
-      if (existing == null) {
+      if (existing == null || !existing.isOnline) {
         await widget.shelfService.addOnline(
           source: widget.result.source,
           book: _book,
@@ -463,7 +463,7 @@ class _SourcedBookDetailsSheetState extends State<_SourcedBookDetailsSheet> {
       }
       if (!mounted) return;
       setState(() {
-        _step = existing == null
+        _step = existing == null || !existing.isOnline
             ? _BookDetailsSheetStep.added
             : _BookDetailsSheetStep.alreadyAdded;
       });

@@ -1,3 +1,7 @@
+import 'package:xxread/widgets/book_update_card.dart';
+import 'package:xxread/book_sources/services/book_source_client.dart';
+import 'package:xxread/pages/book_sources/shelf_source_picker.dart';
+import 'package:xxread/pages/book_sources/shelf_source_navigation.dart';
 // 文件说明：书库页面，负责书籍列表、筛选、排序和进入阅读。
 // 技术要点：Flutter UI、文件系统、渲染层。
 
@@ -1520,251 +1524,280 @@ class _LibraryPageState extends State<LibraryPage> {
                   ]
                 : null,
           ),
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.sizeOf(context).height * 0.88,
+          ),
           child: SafeArea(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.only(top: 12, bottom: 8),
-                  child: Container(
-                    width: 40,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: localScheme.onSurface.withValues(alpha: 0.3),
-                      borderRadius: BorderRadius.circular(2),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.only(top: 12, bottom: 8),
+                    child: Container(
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: localScheme.onSurface.withValues(alpha: 0.3),
+                        borderRadius: BorderRadius.circular(2),
+                      ),
                     ),
                   ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 50,
-                        height: 70,
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(8),
-                          gradient: LinearGradient(
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                            colors: [
-                              localScheme.primary.withValues(alpha: 0.8),
-                              localScheme.secondary.withValues(alpha: 0.6),
-                            ],
-                          ),
-                          border: Border.all(
-                            color: localScheme.outline.withValues(
-                              alpha: isMaterial3Style ? 0.22 : 0.12,
-                            ),
-                            width: 0.8,
-                          ),
-                          boxShadow: isMaterial3Style
-                              ? null
-                              : [
-                                  BoxShadow(
-                                    color: Colors.black.withValues(alpha: 0.1),
-                                    blurRadius: 8,
-                                    offset: const Offset(0, 2),
-                                  ),
-                                ],
-                        ),
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(8),
-                          child: _buildListCover(context, book),
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              book.title,
-                              style: Theme.of(context).textTheme.titleMedium
-                                  ?.copyWith(fontWeight: FontWeight.w600),
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              book.author,
-                              style: Theme.of(context).textTheme.bodySmall
-                                  ?.copyWith(
-                                    color: localScheme.onSurface.withValues(
-                                      alpha: 0.6,
-                                    ),
-                                  ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            const SizedBox(height: 6),
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: ClipRRect(
-                                    borderRadius: BorderRadius.circular(99),
-                                    child: LinearProgressIndicator(
-                                      value: progress,
-                                      minHeight: 5,
-                                      backgroundColor: localScheme.primary
-                                          .withValues(alpha: 0.14),
-                                      color: localScheme.primary,
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                Text(
-                                  '${(progress * 100).toStringAsFixed(1)}%',
-                                  style: Theme.of(context).textTheme.bodySmall
-                                      ?.copyWith(
-                                        color: localScheme.primary,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 50,
+                          height: 70,
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(8),
+                            gradient: LinearGradient(
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                              colors: [
+                                localScheme.primary.withValues(alpha: 0.8),
+                                localScheme.secondary.withValues(alpha: 0.6),
                               ],
                             ),
-                          ],
+                            border: Border.all(
+                              color: localScheme.outline.withValues(
+                                alpha: isMaterial3Style ? 0.22 : 0.12,
+                              ),
+                              width: 0.8,
+                            ),
+                            boxShadow: isMaterial3Style
+                                ? null
+                                : [
+                                    BoxShadow(
+                                      color: Colors.black.withValues(
+                                        alpha: 0.1,
+                                      ),
+                                      blurRadius: 8,
+                                      offset: const Offset(0, 2),
+                                    ),
+                                  ],
+                          ),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(8),
+                            child: _buildListCover(context, book),
+                          ),
                         ),
-                      ),
-                    ],
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                book.title,
+                                style: Theme.of(context).textTheme.titleMedium
+                                    ?.copyWith(fontWeight: FontWeight.w600),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                book.author,
+                                style: Theme.of(context).textTheme.bodySmall
+                                    ?.copyWith(
+                                      color: localScheme.onSurface.withValues(
+                                        alpha: 0.6,
+                                      ),
+                                    ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              const SizedBox(height: 6),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: ClipRRect(
+                                      borderRadius: BorderRadius.circular(99),
+                                      child: LinearProgressIndicator(
+                                        value: progress,
+                                        minHeight: 5,
+                                        backgroundColor: localScheme.primary
+                                            .withValues(alpha: 0.14),
+                                        color: localScheme.primary,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    '${(progress * 100).toStringAsFixed(1)}%',
+                                    style: Theme.of(context).textTheme.bodySmall
+                                        ?.copyWith(
+                                          color: localScheme.primary,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-                Divider(
-                  height: 1,
-                  thickness: 1,
-                  color: localScheme.outline.withValues(alpha: 0.15),
-                ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 6, 12, 8),
-                  child: Column(
-                    children: [
-                      _buildOptionItem(
-                        context: context,
-                        icon: Icons.library_add_check_outlined,
-                        iconColor: localScheme.primary,
-                        title: context.l10n.librarySelectMultiple,
-                        onTap: () {
-                          Navigator.pop(context);
-                          _enterSelectionMode(book);
-                        },
-                      ),
-                      _buildOptionItem(
-                        context: context,
-                        icon: Icons.play_circle_outline,
-                        iconColor: localScheme.primary,
-                        title: context.l10n.continueReading,
-                        trailing: book.isOnline
-                            ? context.l10n.bookSourceOnlineBadge
-                            : book.currentPage > 0
-                            ? context.l10n.libraryPageNumber(book.currentPage)
-                            : context.l10n.libraryStartFromBeginning,
-                        onTap: () async {
-                          Navigator.pop(context);
-                          final fullBook = await _bookDao.getBookById(book.id!);
-                          if (fullBook != null && context.mounted) {
-                            await _openBook(
-                              fullBook,
-                              libraryAnimation: context
-                                  .read<AppSettingsNotifier>()
-                                  .libraryBookOpenAnimation,
+                  Divider(
+                    height: 1,
+                    thickness: 1,
+                    color: localScheme.outline.withValues(alpha: 0.15),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 6, 12, 8),
+                    child: Column(
+                      children: [
+                        _buildOptionItem(
+                          context: context,
+                          icon: Icons.library_add_check_outlined,
+                          iconColor: localScheme.primary,
+                          title: context.l10n.librarySelectMultiple,
+                          onTap: () {
+                            Navigator.pop(context);
+                            _enterSelectionMode(book);
+                          },
+                        ),
+                        _buildOptionItem(
+                          context: context,
+                          icon: Icons.play_circle_outline,
+                          iconColor: localScheme.primary,
+                          title: context.l10n.continueReading,
+                          trailing: book.isOnline
+                              ? context.l10n.bookSourceOnlineBadge
+                              : book.currentPage > 0
+                              ? context.l10n.libraryPageNumber(book.currentPage)
+                              : context.l10n.libraryStartFromBeginning,
+                          onTap: () async {
+                            Navigator.pop(context);
+                            final fullBook = await _bookDao.getBookById(
+                              book.id!,
                             );
-                            _loadBooks();
-                          }
-                        },
-                      ),
-                      if (book.isOnline)
-                        _buildOptionItem(
-                          context: context,
-                          icon: Icons.download_for_offline_outlined,
-                          iconColor: localScheme.secondary,
-                          title: context.l10n.bookSourceDownloadLocal,
-                          onTap: () {
-                            Navigator.pop(context);
-                            unawaited(_downloadOnlineBook(book));
+                            if (fullBook != null && context.mounted) {
+                              await _openBook(
+                                fullBook,
+                                libraryAnimation: context
+                                    .read<AppSettingsNotifier>()
+                                    .libraryBookOpenAnimation,
+                              );
+                              _loadBooks();
+                            }
                           },
                         ),
-                      _buildOptionItem(
-                        context: context,
-                        icon: Icons.info_outline,
-                        iconColor: localScheme.tertiary,
-                        title: context.l10n.libraryBookInfo,
-                        trailing: _bookInfoSubtitle(context, book),
-                        onTap: () {
-                          Navigator.pop(context);
-                          _showBookInfo(book);
-                        },
-                      ),
-                      _buildOptionItem(
-                        context: context,
-                        icon: Icons.edit_outlined,
-                        iconColor: localScheme.secondary,
-                        title: context.l10n.libraryRenameBook,
-                        onTap: () {
-                          Navigator.pop(context);
-                          _renameBook(book);
-                        },
-                      ),
-                      if (!kIsWeb) ...[
                         _buildOptionItem(
                           context: context,
-                          icon: Icons.image_outlined,
-                          iconColor: localScheme.secondary,
-                          title: context.l10n.libraryCustomCover,
+                          icon: Icons.swap_horiz_rounded,
+                          iconColor: localScheme.primary,
+                          title: '换源',
                           onTap: () {
                             Navigator.pop(context);
-                            unawaited(_pickCustomCover(book));
+                            unawaited(_changeShelfSource(book));
                           },
                         ),
-                        if (BookCoverEditService.hasCustomCover(book))
+                        _buildOptionItem(
+                          context: context,
+                          icon: Icons.update_rounded,
+                          iconColor: localScheme.primary,
+                          title: '检查更新',
+                          onTap: () {
+                            Navigator.pop(context);
+                            _showBookUpdate(book);
+                          },
+                        ),
+                        if (book.isOnline)
                           _buildOptionItem(
                             context: context,
-                            icon: Icons.restore,
+                            icon: Icons.download_for_offline_outlined,
                             iconColor: localScheme.secondary,
-                            title: context.l10n.libraryResetCover,
+                            title: context.l10n.bookSourceDownloadLocal,
                             onTap: () {
                               Navigator.pop(context);
-                              unawaited(_resetCustomCover(book));
+                              unawaited(_downloadOnlineBook(book));
                             },
                           ),
-                      ],
-                      if (!book.isOnline && book.filePath.isNotEmpty)
                         _buildOptionItem(
                           context: context,
-                          icon: Icons.file_upload_outlined,
+                          icon: Icons.info_outline,
+                          iconColor: localScheme.tertiary,
+                          title: context.l10n.libraryBookInfo,
+                          trailing: _bookInfoSubtitle(context, book),
+                          onTap: () {
+                            Navigator.pop(context);
+                            _showBookInfo(book);
+                          },
+                        ),
+                        _buildOptionItem(
+                          context: context,
+                          icon: Icons.edit_outlined,
                           iconColor: localScheme.secondary,
-                          title: context.l10n.libraryExportBook,
+                          title: context.l10n.libraryRenameBook,
                           onTap: () {
                             Navigator.pop(context);
-                            unawaited(_exportBook(book));
+                            _renameBook(book);
                           },
                         ),
-                      if (BookTextExtractionService.supports(book))
+                        if (!kIsWeb) ...[
+                          _buildOptionItem(
+                            context: context,
+                            icon: Icons.image_outlined,
+                            iconColor: localScheme.secondary,
+                            title: context.l10n.libraryCustomCover,
+                            onTap: () {
+                              Navigator.pop(context);
+                              unawaited(_pickCustomCover(book));
+                            },
+                          ),
+                          if (BookCoverEditService.hasCustomCover(book))
+                            _buildOptionItem(
+                              context: context,
+                              icon: Icons.restore,
+                              iconColor: localScheme.secondary,
+                              title: context.l10n.libraryResetCover,
+                              onTap: () {
+                                Navigator.pop(context);
+                                unawaited(_resetCustomCover(book));
+                              },
+                            ),
+                        ],
+                        if (!book.isOnline && book.filePath.isNotEmpty)
+                          _buildOptionItem(
+                            context: context,
+                            icon: Icons.file_upload_outlined,
+                            iconColor: localScheme.secondary,
+                            title: context.l10n.libraryExportBook,
+                            onTap: () {
+                              Navigator.pop(context);
+                              unawaited(_exportBook(book));
+                            },
+                          ),
+                        if (BookTextExtractionService.supports(book))
+                          _buildOptionItem(
+                            context: context,
+                            icon: Icons.auto_awesome_outlined,
+                            iconColor: localScheme.primary,
+                            title: context.l10n.libraryAiPreprocess,
+                            onTap: () {
+                              Navigator.pop(context);
+                              unawaited(_confirmAiPreprocess(book));
+                            },
+                          ),
                         _buildOptionItem(
                           context: context,
-                          icon: Icons.auto_awesome_outlined,
-                          iconColor: localScheme.primary,
-                          title: context.l10n.libraryAiPreprocess,
+                          icon: Icons.delete_outline_rounded,
+                          iconColor: localScheme.error,
+                          title: context.l10n.deleteBook,
+                          destructive: true,
                           onTap: () {
                             Navigator.pop(context);
-                            unawaited(_confirmAiPreprocess(book));
+                            _confirmDeleteBook(book);
                           },
                         ),
-                      _buildOptionItem(
-                        context: context,
-                        icon: Icons.delete_outline_rounded,
-                        iconColor: localScheme.error,
-                        title: context.l10n.deleteBook,
-                        destructive: true,
-                        onTap: () {
-                          Navigator.pop(context);
-                          _confirmDeleteBook(book);
-                        },
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
-                const SizedBox(height: 12),
-              ],
+                  const SizedBox(height: 12),
+                ],
+              ),
             ),
           ),
         );
@@ -1801,10 +1834,11 @@ class _LibraryPageState extends State<LibraryPage> {
   /// 重命名书籍：更新书名，若存在本地文件则同步重命名磁盘文件。
   Future<void> _renameBook(Book book) async {
     final controller = TextEditingController(text: book.title);
+    final authorController = TextEditingController(text: book.author);
     final isMaterial3Style = _isMaterial3Style;
     final scheme = Theme.of(context).colorScheme;
     final l10n = context.l10n;
-    final newTitle = await showDialog<String>(
+    final metadata = await showDialog<(String, String)>(
       context: context,
       builder: (dialogContext) => AlertDialog(
         backgroundColor: isMaterial3Style
@@ -1812,12 +1846,23 @@ class _LibraryPageState extends State<LibraryPage> {
             : GlassEffectConfig.surfaceColor(dialogContext, opacity: 0.95),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Text(l10n.libraryRenameBook),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          maxLength: 120,
-          decoration: InputDecoration(labelText: l10n.libraryBookTitle),
-          onSubmitted: (value) => Navigator.of(dialogContext).pop(value),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: controller,
+                autofocus: true,
+                maxLength: 120,
+                decoration: InputDecoration(labelText: l10n.libraryBookTitle),
+              ),
+              TextField(
+                controller: authorController,
+                maxLength: 120,
+                decoration: InputDecoration(labelText: l10n.author),
+              ),
+            ],
+          ),
         ),
         actions: [
           TextButton(
@@ -1825,19 +1870,23 @@ class _LibraryPageState extends State<LibraryPage> {
             child: Text(l10n.cancel),
           ),
           FilledButton(
-            onPressed: () => Navigator.of(dialogContext).pop(controller.text),
+            onPressed: () => Navigator.of(
+              dialogContext,
+            ).pop((controller.text, authorController.text)),
             child: Text(l10n.save),
           ),
         ],
       ),
     );
     controller.dispose();
-    final trimmed = newTitle?.trim();
-    if (trimmed == null || trimmed.isEmpty || trimmed == book.title) return;
+    authorController.dispose();
+    final trimmed = metadata?.$1.trim();
+    if (metadata == null || trimmed == null || trimmed.isEmpty) return;
+    if (trimmed == book.title && metadata.$2.trim() == book.author) return;
 
     final toastContext = context;
     try {
-      await BookRenameService().rename(book, trimmed);
+      await BookRenameService().rename(book, trimmed, newAuthor: metadata.$2);
       _loadBooks();
       if (!toastContext.mounted) return;
       showSideToast(
@@ -1975,6 +2024,57 @@ class _LibraryPageState extends State<LibraryPage> {
   }
 
   /// 显示书籍详细信息
+  bool _switchingShelfSource = false;
+
+  Future<void> _changeShelfSource(Book book) async {
+    if (_switchingShelfSource) return;
+    _switchingShelfSource = true;
+    try {
+      final client = BookSourceClient();
+      final choice = await showShelfSourcePicker(
+        context,
+        anchor: book,
+        client: client,
+        shelfService: _sourceShelfService,
+      );
+      if (choice == null || !mounted) return;
+      showSideToast(context, '正在准备所选来源…');
+      final prepared = await prepareShelfSourceChoice(
+        anchor: book,
+        choice: choice,
+        client: client,
+        shelfService: _sourceShelfService,
+      );
+      if (!mounted) return;
+      await Navigator.of(
+        context,
+      ).push(MaterialPageRoute(builder: (_) => prepared.reader));
+      if (mounted) _loadBooks();
+    } catch (error) {
+      if (mounted)
+        showSideToast(context, '换源失败：$error', kind: SideToastKind.error);
+    } finally {
+      _switchingShelfSource = false;
+    }
+  }
+
+  void _showBookUpdate(Book book) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('书籍更新'),
+        scrollable: true,
+        content: ShelfBookUpdateCard(book: book, autoCheck: true),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('关闭'),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _showBookInfo(Book book) {
     final scheme = Theme.of(context).colorScheme;
     final isMaterial3Style = _isMaterial3Style;
@@ -1995,10 +2095,13 @@ class _LibraryPageState extends State<LibraryPage> {
             Text(context.l10n.libraryBookInfo),
           ],
         ),
+        scrollable: true,
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            ShelfBookUpdateCard(book: book),
+            const SizedBox(height: 16),
             _buildInfoRow(context.l10n.libraryBookTitle, book.title),
             const SizedBox(height: 12),
             _buildInfoRow(context.l10n.author, book.author),

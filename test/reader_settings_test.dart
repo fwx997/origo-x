@@ -4,6 +4,25 @@ import 'package:xxread/core/reader/reader_layout.dart';
 import 'package:xxread/core/reader/reader_settings.dart';
 
 void main() {
+  test('reader interaction defaults and changes persist', () async {
+    SharedPreferences.setMockInitialValues({});
+    const store = ReaderSettingsStore();
+    final initial = await store.load();
+    expect(initial.textSelectionEnabled, isFalse);
+    expect(initial.edgeSwipeBackEnabled, isTrue);
+    expect(initial.hideBarsOnVerticalSwipe, isTrue);
+    await store.save(
+      initial.copyWith(
+        textSelectionEnabled: true,
+        edgeSwipeBackEnabled: false,
+        hideBarsOnVerticalSwipe: false,
+      ),
+    );
+    final restored = await store.load();
+    expect(restored.textSelectionEnabled, isTrue);
+    expect(restored.edgeSwipeBackEnabled, isFalse);
+    expect(restored.hideBarsOnVerticalSwipe, isFalse);
+  });
   test(
     'text appearance and chapter progress persist with safe bounds',
     () async {

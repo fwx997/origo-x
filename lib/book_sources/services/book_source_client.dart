@@ -386,6 +386,26 @@ class BookSourceClient {
     );
   }
 
+  /// User-requested update checks await the remote catalog instead of stale cache.
+  Future<List<BookSourceChapter>> getChaptersFresh(
+    RegisteredBookSource source,
+    String bookId,
+  ) async {
+    Future<List<BookSourceChapter>> fetch() async {
+      final chapters = await getChaptersForDownload(source, bookId);
+      if (chapters.isEmpty) throw const BookSourceProtocolException('书源返回空目录');
+      return chapters;
+    }
+
+    if (source.sourceProtocol != BookSourceProtocolKind.orsp) return fetch();
+    return _chapterCache.refreshChapterCatalog(
+      sourceId: source.id,
+      sourceRevision: source.apiBaseUrl.toString(),
+      bookId: bookId,
+      loader: fetch,
+    );
+  }
+
   Future<List<BookSourceChapter>> getChaptersForDownload(
     RegisteredBookSource source,
     String bookId, {

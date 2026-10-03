@@ -16,6 +16,66 @@ import 'package:xxread/services/books/book_dao.dart';
 
 void main() {
   test(
+    'a failed chapter removes temporary output and keeps the previous downloaded book',
+    () async {
+      final directory = await Directory.systemTemp.createTemp(
+        'download-failure-',
+      );
+      addTearDown(() => directory.delete(recursive: true));
+      final dao = _MemoryBookDao();
+      final initial = await BookSourceShelfService(
+        bookDao: dao,
+        client: _DownloadClient(),
+        downloadDirectory: directory,
+      ).downloadToLocal(source: _source, book: _sourceBook);
+      final original = await File(initial.filePath).readAsBytes();
+      final service = BookSourceShelfService(
+        bookDao: dao,
+        client: _FailingDownloadClient(),
+        downloadDirectory: directory,
+      );
+      await expectLater(
+        service.downloadToLocal(source: _source, book: _sourceBook),
+        throwsStateError,
+      );
+      expect(await File(initial.filePath).readAsBytes(), original);
+      final leftovers = await Directory(
+        '${directory.path}/books',
+      ).list().where((f) => f.path.endsWith('.part')).toList();
+      expect(leftovers, isEmpty);
+    },
+  );
+
+  test(
+    'rolling workers fill a slot before a slow earlier chapter and preserve file order',
+    () async {
+      final directory = await Directory.systemTemp.createTemp(
+        'source-rolling-',
+      );
+      addTearDown(() => directory.delete(recursive: true));
+      final client = _RollingClient();
+      final service = BookSourceShelfService(
+        bookDao: _MemoryBookDao(),
+        client: client,
+        downloadDirectory: directory,
+      );
+      final download = service.downloadToLocal(
+        source: _source,
+        book: _sourceBook,
+      );
+      await client.nextStarted.future.timeout(const Duration(seconds: 5));
+      expect(client.releaseFirst.isCompleted, isFalse);
+      client.releaseFirst.complete();
+      final book = await download;
+      final text = await File(book.filePath).readAsString();
+      final positions = [for (var i = 0; i < 7; i++) text.indexOf('正文$i')];
+      expect(positions, orderedEquals([...positions]..sort()));
+      expect(positions.every((i) => i >= 0), isTrue);
+      expect(client.maxActive, lessThanOrEqualTo(6));
+    },
+  );
+
+  test(
     'changing source updates the existing shelf identity and progress',
     () async {
       final original = Book(
@@ -98,7 +158,7 @@ void main() {
         onProgress: (completed, total) => progress.add((completed, total)),
       );
 
-      expect(client.maxActive, lessThanOrEqualTo(3));
+      expect(client.maxActive, lessThanOrEqualTo(6));
       expect(progress.first, (0, 7));
       expect(progress.last, (7, 7));
       expect(downloaded.isOnline, isFalse);
@@ -158,6 +218,7 @@ void main() {
     addTearDown(() => directory.delete(recursive: true));
     final client = _StreamingDownloadClient();
     final service = BookSourceShelfService(
+      downloadConcurrency: 3,
       bookDao: _MemoryBookDao(),
       client: client,
       downloadDirectory: directory,
@@ -189,7 +250,7 @@ void main() {
 
     client.releaseSecondBatch.complete();
     final downloaded = await download;
-    expect(client.maxActive, lessThanOrEqualTo(3));
+    expect(client.maxActive, lessThanOrEqualTo(6));
     expect(await File(downloaded.filePath).exists(), isTrue);
     expect(
       await booksDirectory
@@ -409,5 +470,45 @@ class _StreamingDownloadClient extends BookSourceClient {
     } finally {
       active--;
     }
+  }
+}
+
+class _RollingClient extends _DownloadClient {
+  final releaseFirst = Completer<void>();
+  final nextStarted = Completer<void>();
+  @override
+  Future<BookSourceChapterContent> getChapterContentForDownload(
+    RegisteredBookSource source, {
+    required String bookId,
+    required String chapterId,
+    BookDownloadCancellation? cancellation,
+  }) async {
+    final index = int.parse(chapterId.split('-').last);
+    if (index == 6) nextStarted.complete();
+    if (index == 0) await releaseFirst.future;
+    return super.getChapterContentForDownload(
+      source,
+      bookId: bookId,
+      chapterId: chapterId,
+      cancellation: cancellation,
+    );
+  }
+}
+
+class _FailingDownloadClient extends _DownloadClient {
+  @override
+  Future<BookSourceChapterContent> getChapterContentForDownload(
+    RegisteredBookSource source, {
+    required String bookId,
+    required String chapterId,
+    BookDownloadCancellation? cancellation,
+  }) async {
+    if (chapterId == 'chapter-2') throw StateError('chapter unavailable');
+    return super.getChapterContentForDownload(
+      source,
+      bookId: bookId,
+      chapterId: chapterId,
+      cancellation: cancellation,
+    );
   }
 }

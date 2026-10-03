@@ -15,10 +15,11 @@ import '../models/registered_book_source.dart';
 import '../protocol/book_source_protocol.dart';
 import 'book_download_cancellation.dart';
 import 'book_source_client.dart';
+import 'book_source_link_service.dart';
 import 'source_cover_cache.dart';
 
 class BookSourceShelfService {
-  static const int _downloadBatchSize = 3;
+  final int downloadConcurrency;
 
   /// 在线书源书籍的进度编码单位：currentPage/totalPages 存储的是
   /// "章节序号 * unitsPerChapter + 章内进度"，而不是真实页码。
@@ -30,7 +31,9 @@ class BookSourceShelfService {
     BookSourceClient? client,
     SourceCoverCache? sourceCoverCache,
     Directory? downloadDirectory,
-  }) : _downloadDirectory = downloadDirectory,
+    this.downloadConcurrency = 6,
+  }) : assert(downloadConcurrency > 0 && downloadConcurrency <= 12),
+       _downloadDirectory = downloadDirectory,
        _bookDao = bookDao ?? BookDao(),
        _client = client ?? BookSourceClient(),
        _sourceCoverCache = sourceCoverCache ?? SourceCoverCache.instance;
@@ -54,7 +57,7 @@ class BookSourceShelfService {
       sourceId: source.id,
       sourceBookId: book.id,
     );
-    if (existing != null) return existing;
+    if (existing != null && existing.isOnline) return existing;
     final generatedCoverPath = await _storedCoverPath(source, book);
     final shelfBook = Book(
       title: book.title,
@@ -69,6 +72,8 @@ class BookSourceShelfService {
       coverImagePath: generatedCoverPath,
     );
     final id = await _bookDao.insertBook(shelfBook);
+    if (existing?.id != null)
+      await BookSourceLinkService().link(id, existing!.id!);
     LibraryEventBus().notifyLibraryChanged();
     return shelfBook.copyWith(id: id);
   }
@@ -83,12 +88,11 @@ class BookSourceShelfService {
         chapterIndex * unitsPerChapter +
         (chapterProgress.clamp(0, 1) * unitsPerChapter).round();
     final totalUnits = chapterCount * unitsPerChapter;
-    await _bookDao.updateBookProgress(
+    await _bookDao.updateOnlineBookProgress(
       shelfBookId,
       currentUnits,
-      readingProgress: totalUnits <= 0 ? 0 : currentUnits / totalUnits,
+      totalUnits,
     );
-    await _bookDao.updateBookTotalPages(shelfBookId, totalUnits);
   }
 
   Future<void> replaceOnlineSource({
@@ -158,44 +162,18 @@ class BookSourceShelfService {
       '${file.path}.${DateTime.now().microsecondsSinceEpoch}.part',
     );
     IOSink? sink;
-    var completed = 0;
     onProgress?.call(0, chapters.length);
 
     try {
       sink = temporaryFile.openWrite(mode: FileMode.write, encoding: utf8);
-      for (
-        var offset = 0;
-        offset < chapters.length;
-        offset += _downloadBatchSize
-      ) {
-        cancellation?.throwIfCancelled();
-        final end = (offset + _downloadBatchSize).clamp(0, chapters.length);
-        final batch = chapters.sublist(offset, end);
-        final contents = await Future.wait(
-          batch.map((chapter) async {
-            final content = await _client.getChapterContentForDownload(
-              source,
-              bookId: book.id,
-              chapterId: chapter.id,
-              cancellation: cancellation,
-            );
-            cancellation?.throwIfCancelled();
-            completed++;
-            onProgress?.call(completed, chapters.length);
-            return content;
-          }),
-        );
-        cancellation?.throwIfCancelled();
-        for (var index = 0; index < batch.length; index++) {
-          sink
-            ..writeln(batch[index].title)
-            ..writeln()
-            ..writeln(_plainText(contents[index]))
-            ..writeln()
-            ..writeln();
-        }
-        await sink.flush();
-      }
+      await _writeDownloadedChapters(
+        sink,
+        source,
+        book,
+        chapters,
+        cancellation: cancellation,
+        onProgress: onProgress,
+      );
       cancellation?.throwIfCancelled();
       await sink.close();
       sink = null;
@@ -232,6 +210,10 @@ class BookSourceShelfService {
         author: book.author,
         filePath: file.path,
         format: 'txt',
+        currentPage: existing.isOnline
+            ? existing.currentPage ~/ unitsPerChapter
+            : existing.currentPage,
+        readingProgress: existing.progress,
         totalPages: chapters.length,
         storageType: 'local',
         sourceJson: jsonEncode(source.toJson()),
@@ -259,6 +241,68 @@ class BookSourceShelfService {
     final id = await _bookDao.insertBook(downloaded);
     LibraryEventBus().notifyLibraryChanged();
     return downloaded.copyWith(id: id);
+  }
+
+  Future<void> _writeDownloadedChapters(
+    IOSink sink,
+    RegisteredBookSource source,
+    BookSourceBook book,
+    List<BookSourceChapter> chapters, {
+    BookDownloadCancellation? cancellation,
+    void Function(int completed, int total)? onProgress,
+  }) async {
+    final active = <int, Future<(int, BookSourceChapterContent)>>{};
+    final ready = <int, BookSourceChapterContent>{};
+    var next = 0;
+    var written = 0;
+    var completed = 0;
+    try {
+      while (written < chapters.length) {
+        cancellation?.throwIfCancelled();
+        // Limit both requests and out-of-order buffering when an early chapter is slow.
+        while (active.length < downloadConcurrency &&
+            next < chapters.length &&
+            next < written + downloadConcurrency * 2) {
+          final index = next++;
+          active[index] = _client
+              .getChapterContentForDownload(
+                source,
+                bookId: book.id,
+                chapterId: chapters[index].id,
+                cancellation: cancellation,
+              )
+              .then((content) => (index, content));
+        }
+        final (index, content) = await Future.any(active.values);
+        active.remove(index);
+        cancellation?.throwIfCancelled();
+        ready[index] = content;
+        onProgress?.call(++completed, chapters.length);
+        while (ready.containsKey(written)) {
+          final chapterContent = ready.remove(written)!;
+          sink
+            ..writeln(chapters[written].title)
+            ..writeln()
+            ..writeln(_plainText(chapterContent))
+            ..writeln()
+            ..writeln();
+          written++;
+        }
+        await sink.flush();
+      }
+    } catch (_) {
+      // Observe all already-started requests before the caller closes the output file.
+      await Future.wait(
+        active.values.map((task) async {
+          try {
+            await task;
+          } catch (_) {
+            /* Keep the original failure. */
+          }
+        }),
+      );
+      rethrow;
+    }
   }
 
   RegisteredBookSource sourceFrom(Book book) {

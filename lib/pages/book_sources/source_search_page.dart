@@ -26,6 +26,7 @@ class SourceSearchPage extends StatefulWidget {
   final BookSourceClient client;
   final BookSourceShelfService shelfService;
   final SourcedBook? initialBook;
+  final Widget? additionalSources;
   final String? initialSourceId;
   final ValueChanged<SourcedBook>? onBookSelected;
 
@@ -35,6 +36,7 @@ class SourceSearchPage extends StatefulWidget {
     required this.client,
     required this.shelfService,
     this.initialBook,
+    this.additionalSources,
     this.initialSourceId,
     this.onBookSelected,
   });
@@ -403,6 +405,7 @@ class _SourceSearchPageState extends State<SourceSearchPage> {
             children: [
               if (enabledSources.isNotEmpty) _buildScopeChips(enabledSources),
               _buildSearchOptions(),
+              if (widget.additionalSources != null) widget.additionalSources!,
               if (_searching || _loadingMore)
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),

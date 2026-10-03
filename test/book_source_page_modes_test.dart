@@ -484,7 +484,7 @@ void main() {
       find.byKey(const ValueKey('book-source-bottom-controls')),
     );
     expect(top.top, -130);
-    expect(bottom.bottom, -110);
+    expect(bottom.bottom, -150);
   });
 
   testWidgets(

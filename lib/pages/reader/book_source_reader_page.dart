@@ -1,3 +1,6 @@
+import '../book_sources/shelf_source_picker.dart';
+import '../book_sources/shelf_source_navigation.dart';
+import '../../book_sources/services/book_update_service.dart';
 import 'dart:async';
 import 'dart:math' as math;
 
@@ -9,9 +12,7 @@ import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 import 'package:xxread/book_sources/models/registered_book_source.dart';
 import 'package:xxread/book_sources/protocol/book_source_protocol.dart';
 import 'package:xxread/book_sources/services/book_source_client.dart';
-import 'package:xxread/book_sources/services/book_source_registry.dart';
 import 'package:xxread/book_sources/services/book_source_switch.dart';
-import 'package:xxread/pages/book_sources/source_search_page.dart';
 import 'package:xxread/pages/book_sources/widgets/sourced_book_widgets.dart';
 import 'package:xxread/book_sources/services/book_source_chapter_text.dart';
 import 'package:xxread/book_sources/services/book_source_reading_progress.dart';
@@ -152,6 +153,9 @@ class _BookSourceReaderPageState extends State<BookSourceReaderPage>
   bool _dimNightText = true;
   int _fontWeight = 400;
   bool _showChapterProgress = true;
+  bool _textSelectionEnabled = false;
+  bool _edgeSwipeBackEnabled = true;
+  bool _hideBarsOnVerticalSwipe = true;
   double _lineHeight = 1.75;
   double _letterSpacing = ReaderSettings.defaultLetterSpacing;
   ReaderTextAlignment _textAlignment = ReaderSettings.defaultTextAlignment;
@@ -187,6 +191,7 @@ class _BookSourceReaderPageState extends State<BookSourceReaderPage>
   String? _paginationKey;
   List<BookSourceTextPage> _paginatedPages = const [];
   int _chapterLoadSerial = 0;
+  int _catalogRevision = 0;
   final Map<int, BookSourceChapterContent> _prefetchedContent = {};
   final Map<int, String> _readableChapterText = {};
   final Map<int, Future<BookSourceChapterContent>> _continuousContentLoads = {};
@@ -247,6 +252,9 @@ class _BookSourceReaderPageState extends State<BookSourceReaderPage>
     dimNightText: _dimNightText,
     fontWeight: _fontWeight,
     showChapterProgress: _showChapterProgress,
+    textSelectionEnabled: _textSelectionEnabled,
+    edgeSwipeBackEnabled: _edgeSwipeBackEnabled,
+    hideBarsOnVerticalSwipe: _hideBarsOnVerticalSwipe,
     lineHeight: _lineHeight,
     letterSpacing: _letterSpacing,
     textAlignment: _textAlignment,
@@ -543,6 +551,9 @@ class _BookSourceReaderPageState extends State<BookSourceReaderPage>
         _dimNightText = settings.dimNightText;
         _fontWeight = settings.fontWeight;
         _showChapterProgress = settings.showChapterProgress;
+        _textSelectionEnabled = settings.textSelectionEnabled;
+        _edgeSwipeBackEnabled = settings.edgeSwipeBackEnabled;
+        _hideBarsOnVerticalSwipe = settings.hideBarsOnVerticalSwipe;
         _horizontalMargin = settings.horizontalMargin;
         _topMargin = settings.topMargin;
         _bottomMargin = settings.bottomMargin;
@@ -702,7 +713,9 @@ class _BookSourceReaderPageState extends State<BookSourceReaderPage>
       return;
     }
     if (!mounted) return;
-    setState(() => _shelfBookId = shelfBook?.id);
+    setState(
+      () => _shelfBookId = shelfBook?.isOnline == true ? shelfBook!.id : null,
+    );
     final shelfBookId = _shelfBookId;
     if (shelfBookId == null) return;
     unawaited(ReadingResumeService.markReading(shelfBookId));
@@ -959,6 +972,8 @@ class _BookSourceReaderPageState extends State<BookSourceReaderPage>
     final inFlight = _continuousContentLoads[index];
     if (inFlight != null) return inFlight;
     late final Future<BookSourceChapterContent> future;
+    final revision = _catalogRevision;
+    final title = _chapters[index].title;
     final contentFuture = cached != null
         ? Future<BookSourceChapterContent>.value(cached)
         : _client.getChapterContent(
@@ -968,12 +983,13 @@ class _BookSourceReaderPageState extends State<BookSourceReaderPage>
           );
     future = contentFuture
         .then((content) async {
+          final text = await readableBookSourceChapterTextAsync(
+            content,
+            fallbackTitle: title,
+          );
+          if (!mounted || revision != _catalogRevision) return content;
           _readableChapterText.remove(index);
-          _readableChapterText[index] =
-              await readableBookSourceChapterTextAsync(
-                content,
-                fallbackTitle: _chapters[index].title,
-              );
+          _readableChapterText[index] = text;
           while (_readableChapterText.length > _readableChapterTextLimit) {
             _readableChapterText.remove(_readableChapterText.keys.first);
           }
@@ -1157,7 +1173,7 @@ class _BookSourceReaderPageState extends State<BookSourceReaderPage>
       sourceBookId: widget.book.id,
     );
     if (!mounted) return;
-    if (shelfBook != null) {
+    if (shelfBook?.isOnline == true) {
       BookOpenTransition.beginExit();
       setState(() => _allowPop = true);
       Navigator.of(context).pop();
@@ -2036,6 +2052,15 @@ class _BookSourceReaderPageState extends State<BookSourceReaderPage>
         dimNightText: _dimNightText,
         fontWeight: _fontWeight,
         showChapterProgress: _showChapterProgress,
+        textSelectionEnabled: _textSelectionEnabled,
+        edgeSwipeBackEnabled: _edgeSwipeBackEnabled,
+        hideBarsOnVerticalSwipe: _hideBarsOnVerticalSwipe,
+        onTextSelectionChanged: (value) =>
+            unawaited(_setInteractionSettings(selection: value)),
+        onEdgeSwipeBackChanged: (value) =>
+            unawaited(_setInteractionSettings(edgeBack: value)),
+        onHideBarsOnVerticalSwipeChanged: (value) =>
+            unawaited(_setInteractionSettings(hideBars: value)),
         onTextBrightnessChanged: (value) =>
             unawaited(_setTextAppearance(brightness: value)),
         onDimNightTextChanged: (value) =>
@@ -2098,6 +2123,78 @@ class _BookSourceReaderPageState extends State<BookSourceReaderPage>
     await _updateReadingSettings(pageMode: selectedMode);
   }
 
+  Future<void> _applyCatalogUpdate(BookUpdateResult result) async {
+    if (!mounted) return;
+    final previous = _chapters;
+    final chapterId = previous.isEmpty ? null : previous[_chapterIndex].id;
+    final matched = result.chapters.indexWhere((c) => c.id == chapterId);
+    final index = matched < 0
+        ? _chapterIndex.clamp(0, result.chapters.length - 1)
+        : matched;
+    final progress = matched < 0 ? 0.0 : _currentReadingProgress;
+    final appended =
+        result.chapters.length >= previous.length &&
+        previous.indexed.every(
+          (entry) => entry.$2.id == result.chapters[entry.$1].id,
+        );
+    if (appended) {
+      setState(() => _chapters = result.chapters);
+      await _saveProgress();
+      return;
+    }
+    try {
+      final content = await _client.getChapterContent(
+        widget.source,
+        bookId: widget.book.id,
+        chapterId: result.chapters[index].id,
+      );
+      final text = await readableBookSourceChapterTextAsync(
+        content,
+        fallbackTitle: result.chapters[index].title,
+      );
+      if (!mounted) return;
+      _catalogRevision++;
+      _chapterLoadSerial++;
+      _pagedLayoutWarmTimer?.cancel();
+      _prefetchedContent.clear();
+      _readableChapterText.clear();
+      _continuousContentLoads.clear();
+      _pagedLayouts.clear();
+      _verticalLayouts.clear();
+      _warmedPagedLayoutIndexes.clear();
+      _queuedPagedLayoutWarms.clear();
+      _prefetchedContent[index] = content;
+      _readableChapterText[index] = text;
+      setState(() {
+        _chapters = result.chapters;
+        _loadingContent = false;
+      });
+      await _loadChapter(index, restoreProgress: progress, saveCurrent: false);
+    } catch (error) {
+      if (mounted) showSideToast(context, '目录已更新，正文暂时无法刷新：$error');
+    }
+  }
+
+  Future<void> _addCurrentBookToShelf() async {
+    if (_bookmarkBusy) return;
+    setState(() => _bookmarkBusy = true);
+    try {
+      final added = await _shelfService.addOnline(
+        source: widget.source,
+        book: widget.book,
+      );
+      if (!mounted) return;
+      setState(() => _shelfBookId = added.id);
+      await _saveProgress();
+      await _resolveShelfBook();
+      if (mounted) showSideToast(context, '已加入书架');
+    } catch (error) {
+      if (mounted) showSideToast(context, '加入书架失败：$error');
+    } finally {
+      if (mounted) setState(() => _bookmarkBusy = false);
+    }
+  }
+
   Future<void> _showBookSettings() async {
     _controlsTimer?.cancel();
     await _readerAloudController?.stop();
@@ -2109,6 +2206,8 @@ class _BookSourceReaderPageState extends State<BookSourceReaderPage>
           book: widget.book,
           chapterCount: _chapters.length,
           latestChapter: _chapters.lastOrNull?.title ?? '',
+          updateService: BookUpdateService(client: _client),
+          onUpdated: _applyCatalogUpdate,
         ),
       ),
     );
@@ -2125,20 +2224,41 @@ class _BookSourceReaderPageState extends State<BookSourceReaderPage>
   Future<void> _changeBookSource() async {
     if (_changingSource || _chapters.isEmpty) return;
     try {
-      final sources = await BookSourceRegistry().load();
-      if (!mounted) return;
-      final selected = await Navigator.of(context).push<SourcedBook>(
-        MaterialPageRoute(
-          builder: (_) => SourceSearchPage(
-            sources: sources,
-            client: _client,
-            shelfService: _shelfService,
-            initialBook: SourcedBook(source: widget.source, book: widget.book),
-            onBookSelected: (book) => Navigator.of(context).pop(book),
-          ),
-        ),
+      final anchor = Book(
+        id: _shelfBookId,
+        title: widget.book.title,
+        author: widget.book.author,
+        filePath: '',
+        format: 'source',
+        storageType: 'online',
       );
-      if (selected == null || !mounted) return;
+      final choice = await showShelfSourcePicker(
+        context,
+        anchor: anchor,
+        client: _client,
+        shelfService: _shelfService,
+        reference: SourcedBook(source: widget.source, book: widget.book),
+      );
+      if (choice == null || !mounted) return;
+      if (choice.local != null) {
+        setState(() => _changingSource = true);
+        await _saveProgress();
+        final prepared = await prepareShelfSourceChoice(
+          anchor: anchor,
+          choice: choice,
+          client: _client,
+          shelfService: _shelfService,
+        );
+        if (!mounted) return;
+        _switchingReader = true;
+        unawaited(
+          Navigator.of(context).pushReplacement<void, void>(
+            MaterialPageRoute(builder: (_) => prepared.reader),
+          ),
+        );
+        return;
+      }
+      final selected = choice.online!;
       setState(() => _changingSource = true);
       final plan = await prepareBookSourceSwitch(
         client: _client,
@@ -2283,7 +2403,9 @@ class _BookSourceReaderPageState extends State<BookSourceReaderPage>
       key: const ValueKey('reader-system-ui-region'),
       value: _readerSystemUiOverlayStyle,
       child: PopScope(
-        canPop: _canPopWithoutPrompt && !_tapZoneEditorVisible,
+        canPop:
+            (_allowPop || (_edgeSwipeBackEnabled && _canPopWithoutPrompt)) &&
+            !_tapZoneEditorVisible,
         onPopInvokedWithResult: (didPop, _) {
           if (didPop) {
             BookOpenTransition.beginExit();
@@ -2332,6 +2454,12 @@ class _BookSourceReaderPageState extends State<BookSourceReaderPage>
                             _content != null &&
                             !_annotationInteractionActive,
                         onTap: _handleReaderTap,
+                        onEdgeBack: _edgeSwipeBackEnabled
+                            ? () => unawaited(_requestExit())
+                            : null,
+                        onVerticalSwipe: _hideBarsOnVerticalSwipe
+                            ? _hideReaderBars
+                            : null,
                         child: Semantics(
                           label: widget.book.title,
                           child: _buildBodyCrossfade(),
@@ -2374,9 +2502,14 @@ class _BookSourceReaderPageState extends State<BookSourceReaderPage>
                       ),
                       statusBuilder: _buildReaderStatusText,
                       onBack: () => unawaited(_requestExit()),
+                      addToShelf: _shelfBookId == null,
                       onBookmark: _chapters.isEmpty
                           ? null
-                          : () => unawaited(_toggleCurrentBookmark()),
+                          : () => unawaited(
+                              _shelfBookId == null
+                                  ? _addCurrentBookToShelf()
+                                  : _toggleCurrentBookmark(),
+                            ),
                       onTableOfContents: _chapters.isEmpty
                           ? null
                           : _showCatalog,
@@ -2402,7 +2535,9 @@ class _BookSourceReaderPageState extends State<BookSourceReaderPage>
                       backTooltip: MaterialLocalizations.of(
                         context,
                       ).backButtonTooltip,
-                      bookmarkTooltip: _currentPageIsBookmarked
+                      bookmarkTooltip: _shelfBookId == null
+                          ? context.l10n.bookSourceAddToShelf
+                          : _currentPageIsBookmarked
                           ? context.l10n.bookmarkRemoved
                           : context.l10n.readerAddBookmark,
                       tableOfContentsTooltip: context.l10n.readerToolbarTOC,
@@ -2596,6 +2731,23 @@ class _BookSourceReaderPageState extends State<BookSourceReaderPage>
         };
       },
     );
+  }
+
+  void _hideReaderBars() {
+    if (mounted && _controlsVisible) setState(() => _controlsVisible = false);
+  }
+
+  Future<void> _setInteractionSettings({
+    bool? selection,
+    bool? edgeBack,
+    bool? hideBars,
+  }) async {
+    setState(() {
+      _textSelectionEnabled = selection ?? _textSelectionEnabled;
+      _edgeSwipeBackEnabled = edgeBack ?? _edgeSwipeBackEnabled;
+      _hideBarsOnVerticalSwipe = hideBars ?? _hideBarsOnVerticalSwipe;
+    });
+    await _readerSettingsStore.save(_readerSettings);
   }
 
   Future<void> _setTextAppearance({
@@ -3014,6 +3166,7 @@ class _BookSourceReaderPageState extends State<BookSourceReaderPage>
           fallbackTitle: _chapters[chapterIndex].title,
         );
     return ReaderAnnotatedTextPage(
+      selectionEnabled: _textSelectionEnabled,
       key: ValueKey(
         'source-annotated-page:${_chapters[chapterIndex].id}:$pageIndex:'
         '${page.startOffset}:${page.endOffset}',

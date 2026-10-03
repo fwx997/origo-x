@@ -121,6 +121,7 @@ class BookDao implements BookImportStore {
       'books',
       where: 'source_id = ? AND source_book_id = ?',
       whereArgs: [sourceId, sourceBookId],
+      orderBy: "CASE WHEN storage_type = 'online' THEN 0 ELSE 1 END, id",
       limit: 1,
     );
     return maps.isEmpty ? null : Book.fromMap(maps.first);
@@ -133,6 +134,39 @@ class BookDao implements BookImportStore {
       {'totalPages': totalPages},
       where: 'id = ?',
       whereArgs: [bookId],
+    );
+  }
+
+  Future<void> updateOnlineBookProgress(
+    int bookId,
+    int currentUnits,
+    int totalUnits,
+  ) async {
+    final db = await _dbService.database;
+    await db.update(
+      'books',
+      {
+        'currentPage': currentUnits,
+        'totalPages': totalUnits,
+        'reading_progress': totalUnits <= 0 ? 0 : currentUnits / totalUnits,
+      },
+      where: "id = ? AND storage_type = 'online'",
+      whereArgs: [bookId],
+    );
+  }
+
+  Future<void> updateSourceCatalog(
+    int bookId,
+    String metadata,
+    int totalUnits,
+  ) async {
+    final db = await _dbService.database;
+    await db.rawUpdate(
+      "UPDATE books SET source_book_json = ?, "
+      "totalPages = CASE WHEN storage_type = 'online' THEN ? ELSE totalPages END, "
+      "reading_progress = CASE WHEN storage_type = 'online' THEN "
+      "MIN(1.0, currentPage * 1.0 / ?) ELSE reading_progress END WHERE id = ?",
+      [metadata, totalUnits, totalUnits, bookId],
     );
   }
 

@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import '../../book_sources/models/registered_book_source.dart';
 import '../../book_sources/protocol/book_source_protocol.dart';
 import '../../widgets/source_cover_image.dart';
+import '../../widgets/book_update_card.dart';
+import '../../book_sources/services/book_update_service.dart';
 
 enum SourceBookSettingAction { changeSource, readingSettings }
 
@@ -13,11 +15,15 @@ class SourceBookSettingsPage extends StatefulWidget {
     required this.book,
     required this.chapterCount,
     required this.latestChapter,
+    this.updateService,
+    this.onUpdated,
   });
   final RegisteredBookSource source;
   final BookSourceBook book;
   final int chapterCount;
   final String latestChapter;
+  final BookUpdateService? updateService;
+  final ValueChanged<BookUpdateResult>? onUpdated;
 
   @override
   State<SourceBookSettingsPage> createState() => _SourceBookSettingsPageState();
@@ -64,16 +70,22 @@ class _SourceBookSettingsPageState extends State<SourceBookSettingsPage> {
         ],
       ),
       const SizedBox(height: 16),
-      _card([
-        const Text('当前目录'),
-        const SizedBox(height: 12),
-        Text('共 ${widget.chapterCount} 章'),
-        if (widget.latestChapter.isNotEmpty) Text('末章：${widget.latestChapter}'),
-      ]),
+      BookUpdateCard(
+        source: widget.source,
+        book: widget.book,
+        knownCount: widget.chapterCount,
+        latestChapter: widget.latestChapter,
+        service: widget.updateService,
+        onUpdated: widget.onUpdated,
+      ),
     ],
   );
 
   Widget _card(List<Widget> children) => Card(
+    margin: EdgeInsets.zero,
+    elevation: 0,
+    color: Theme.of(context).colorScheme.surfaceContainerLow,
+    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
     child: Padding(
       padding: const EdgeInsets.all(20),
       child: Column(
@@ -95,14 +107,15 @@ class _SourceBookSettingsPageState extends State<SourceBookSettingsPage> {
       overflow: _expanded ? null : TextOverflow.ellipsis,
       style: const TextStyle(height: 1.7),
     ),
-    Align(
-      alignment: Alignment.centerRight,
-      child: TextButton.icon(
-        onPressed: () => setState(() => _expanded = !_expanded),
-        icon: Icon(_expanded ? Icons.expand_less : Icons.expand_more),
-        label: Text(_expanded ? '收起' : '展开'),
+    if (widget.book.description.length > 100)
+      Align(
+        alignment: Alignment.centerRight,
+        child: TextButton.icon(
+          onPressed: () => setState(() => _expanded = !_expanded),
+          icon: Icon(_expanded ? Icons.expand_less : Icons.expand_more),
+          label: Text(_expanded ? '收起' : '展开'),
+        ),
       ),
-    ),
   ]);
 
   Widget _action(
@@ -111,6 +124,10 @@ class _SourceBookSettingsPageState extends State<SourceBookSettingsPage> {
     IconData icon,
     SourceBookSettingAction action,
   ) => Card(
+    margin: EdgeInsets.zero,
+    elevation: 0,
+    color: Theme.of(context).colorScheme.surfaceContainerLow,
+    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
     clipBehavior: Clip.antiAlias,
     child: InkWell(
       key: ValueKey('source-book-${action.name}'),
@@ -145,6 +162,10 @@ class _SourceBookSettingsPageState extends State<SourceBookSettingsPage> {
       child: Icon(Icons.menu_book, size: 40),
     );
     return Card(
+      margin: EdgeInsets.zero,
+      elevation: 0,
+      color: Theme.of(context).colorScheme.surfaceContainerLow,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Row(

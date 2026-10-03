@@ -23,6 +23,8 @@ def verify(package, label):
         required = [
             label, '从 JSON / XBS 文件添加', '切换站点',
             '书籍设置', '文字亮度', '字体粗细', '章节进度', '偏好设置',
+            '长按选中文字', '左侧边缘滑动返回', '滑动时隐藏操作栏',
+            '阅读底部栏', '检查更新', '关联本地书',
         ]
         for text in required:
             assert any(text.encode(enc) in binary for enc in ('utf-8', 'utf-16-le')), text

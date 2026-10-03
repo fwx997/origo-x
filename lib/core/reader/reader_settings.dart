@@ -29,6 +29,9 @@ class ReaderSettings {
     this.dimNightText = true,
     this.fontWeight = 400,
     this.showChapterProgress = true,
+    this.textSelectionEnabled = false,
+    this.edgeSwipeBackEnabled = true,
+    this.hideBarsOnVerticalSwipe = true,
     required this.lineHeight,
     this.letterSpacing = defaultLetterSpacing,
     this.textAlignment = defaultTextAlignment,
@@ -49,6 +52,9 @@ class ReaderSettings {
   final bool dimNightText;
   final int fontWeight;
   final bool showChapterProgress;
+  final bool textSelectionEnabled;
+  final bool edgeSwipeBackEnabled;
+  final bool hideBarsOnVerticalSwipe;
   final double lineHeight;
   final double letterSpacing;
   final ReaderTextAlignment textAlignment;
@@ -69,6 +75,9 @@ class ReaderSettings {
     bool? dimNightText,
     int? fontWeight,
     bool? showChapterProgress,
+    bool? textSelectionEnabled,
+    bool? edgeSwipeBackEnabled,
+    bool? hideBarsOnVerticalSwipe,
     double? lineHeight,
     double? letterSpacing,
     ReaderTextAlignment? textAlignment,
@@ -90,6 +99,10 @@ class ReaderSettings {
       fontWeight:
           ((fontWeight ?? this.fontWeight) / 100).round().clamp(3, 7) * 100,
       showChapterProgress: showChapterProgress ?? this.showChapterProgress,
+      textSelectionEnabled: textSelectionEnabled ?? this.textSelectionEnabled,
+      edgeSwipeBackEnabled: edgeSwipeBackEnabled ?? this.edgeSwipeBackEnabled,
+      hideBarsOnVerticalSwipe:
+          hideBarsOnVerticalSwipe ?? this.hideBarsOnVerticalSwipe,
       lineHeight: (lineHeight ?? this.lineHeight).clamp(1.4, 2.1),
       letterSpacing: (letterSpacing ?? this.letterSpacing).clamp(
         minLetterSpacing,
@@ -126,6 +139,10 @@ class ReaderSettingsStore {
   static const dimNightTextKey = 'reader_dim_night_text';
   static const fontWeightKey = 'reader_font_weight';
   static const chapterProgressKey = 'reader_chapter_progress';
+  static const textSelectionKey = 'reader_text_selection_enabled';
+  static const edgeSwipeBackKey = 'reader_edge_swipe_back_enabled';
+  static const hideBarsOnVerticalSwipeKey =
+      'reader_hide_bars_on_vertical_swipe';
   static const lineHeightKey = 'native_reader_line_height';
   static const letterSpacingKey = 'native_reader_letter_spacing';
   static const textAlignmentKey = 'native_reader_text_alignment';
@@ -184,6 +201,10 @@ class ReaderSettingsStore {
           ((prefs.getInt(fontWeightKey) ?? 400) / 100).round().clamp(3, 7) *
           100,
       showChapterProgress: prefs.getBool(chapterProgressKey) ?? true,
+      textSelectionEnabled: prefs.getBool(textSelectionKey) ?? false,
+      edgeSwipeBackEnabled: prefs.getBool(edgeSwipeBackKey) ?? true,
+      hideBarsOnVerticalSwipe:
+          prefs.getBool(hideBarsOnVerticalSwipeKey) ?? true,
       lineHeight:
           (prefs.getDouble(lineHeightKey) ??
                   prefs.getDouble(legacyBookSourceLineHeightKey) ??
@@ -238,6 +259,12 @@ class ReaderSettingsStore {
       prefs.setBool(dimNightTextKey, settings.dimNightText),
       prefs.setInt(fontWeightKey, settings.fontWeight),
       prefs.setBool(chapterProgressKey, settings.showChapterProgress),
+      prefs.setBool(textSelectionKey, settings.textSelectionEnabled),
+      prefs.setBool(edgeSwipeBackKey, settings.edgeSwipeBackEnabled),
+      prefs.setBool(
+        hideBarsOnVerticalSwipeKey,
+        settings.hideBarsOnVerticalSwipe,
+      ),
       prefs.setDouble(lineHeightKey, settings.lineHeight),
       prefs.setDouble(letterSpacingKey, settings.letterSpacing),
       prefs.setString(textAlignmentKey, settings.textAlignment.name),

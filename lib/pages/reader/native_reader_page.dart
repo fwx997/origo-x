@@ -1,3 +1,8 @@
+import '../book_sources/shelf_source_picker.dart';
+import '../book_sources/shelf_source_navigation.dart';
+import '../../book_sources/services/book_source_client.dart';
+import '../../book_sources/services/book_source_shelf_service.dart';
+import '../../widgets/book_update_card.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:developer' as developer;
@@ -242,6 +247,10 @@ class _NativeReaderPageState extends State<NativeReaderPage>
   bool _dimNightText = true;
   int _fontWeight = 400;
   bool _showChapterProgress = true;
+  bool _textSelectionEnabled = false;
+  bool _edgeSwipeBackEnabled = true;
+  bool _allowExit = false;
+  bool _hideBarsOnVerticalSwipe = true;
   double _lineHeight = 1.75;
   double _letterSpacing = ReaderSettings.defaultLetterSpacing;
   ReaderTextAlignment _textAlignment = ReaderSettings.defaultTextAlignment;
@@ -480,6 +489,7 @@ class _NativeReaderPageState extends State<NativeReaderPage>
     BookOpenTransition.beginExit();
     unawaited(_flushReadingSession());
     if (!mounted) return;
+    setState(() => _allowExit = true);
     Navigator.of(context).pop();
   }
 
@@ -856,6 +866,9 @@ class _NativeReaderPageState extends State<NativeReaderPage>
         _dimNightText = settings.dimNightText;
         _fontWeight = settings.fontWeight;
         _showChapterProgress = settings.showChapterProgress;
+        _textSelectionEnabled = settings.textSelectionEnabled;
+        _edgeSwipeBackEnabled = settings.edgeSwipeBackEnabled;
+        _hideBarsOnVerticalSwipe = settings.hideBarsOnVerticalSwipe;
         _lineHeight = settings.lineHeight;
         _letterSpacing = settings.letterSpacing;
         _textAlignment = settings.textAlignment;
@@ -928,6 +941,9 @@ class _NativeReaderPageState extends State<NativeReaderPage>
     dimNightText: _dimNightText,
     fontWeight: _fontWeight,
     showChapterProgress: _showChapterProgress,
+    textSelectionEnabled: _textSelectionEnabled,
+    edgeSwipeBackEnabled: _edgeSwipeBackEnabled,
+    hideBarsOnVerticalSwipe: _hideBarsOnVerticalSwipe,
     lineHeight: _lineHeight,
     letterSpacing: _letterSpacing,
     textAlignment: _textAlignment,
@@ -942,6 +958,23 @@ class _NativeReaderPageState extends State<NativeReaderPage>
     tapPageAnimationEnabled: _tapPageAnimationEnabled,
     tabletTwoPageEnabled: _tabletTwoPageEnabled,
   );
+
+  void _hideReaderBars() {
+    if (mounted && _controlsVisible) setState(() => _controlsVisible = false);
+  }
+
+  Future<void> _setInteractionSettings({
+    bool? selection,
+    bool? edgeBack,
+    bool? hideBars,
+  }) async {
+    setState(() {
+      _textSelectionEnabled = selection ?? _textSelectionEnabled;
+      _edgeSwipeBackEnabled = edgeBack ?? _edgeSwipeBackEnabled;
+      _hideBarsOnVerticalSwipe = hideBars ?? _hideBarsOnVerticalSwipe;
+    });
+    await _readerSettingsStore.save(_readerSettings);
+  }
 
   Future<void> _setTextAppearance({
     double? brightness,
@@ -1020,6 +1053,7 @@ class _NativeReaderPageState extends State<NativeReaderPage>
   }) {
     final flowStyle = _readerTextFlowStyle();
     return ReaderAnnotatedTextPage(
+      selectionEnabled: _textSelectionEnabled,
       key: ValueKey(
         'native-annotated-page:${chapter.id}:$pageIndex:'
         '${page.startOffset}:${page.endOffset}',
@@ -2069,6 +2103,135 @@ class _NativeReaderPageState extends State<NativeReaderPage>
     );
   }
 
+  bool _changingBookSource = false;
+
+  Future<void> _showLocalBookSettings() async {
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => SafeArea(
+        child: SingleChildScrollView(
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: _localBookSettingsContent(context),
+          ),
+        ),
+      ),
+    );
+    if (!mounted) return;
+    if (action == 'settings') await _showReadingSettings();
+    if (action == 'source') await _changeLocalBookSource();
+  }
+
+  Widget _localBookSettingsContent(BuildContext sheetContext) {
+    final theme = Theme.of(sheetContext);
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text('书籍设置', style: theme.textTheme.titleLarge),
+        const SizedBox(height: 20),
+        Text(
+          widget.book.title,
+          style: theme.textTheme.titleMedium?.copyWith(
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          '${widget.book.author} · 本地 ${widget.book.format.toUpperCase()}',
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: 20),
+        Card(
+          margin: EdgeInsets.zero,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Column(
+            children: [
+              _localSettingAction(
+                sheetContext,
+                '换源',
+                Icons.swap_horiz_rounded,
+                'source',
+              ),
+              const Divider(height: 1, indent: 16, endIndent: 16),
+              _localSettingAction(
+                sheetContext,
+                '阅读设置',
+                Icons.tune_rounded,
+                'settings',
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 20),
+        ShelfBookUpdateCard(book: widget.book),
+      ],
+    );
+  }
+
+  Widget _localSettingAction(
+    BuildContext context,
+    String label,
+    IconData icon,
+    String action,
+  ) => ListTile(
+    contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+    leading: Icon(icon, color: Theme.of(context).colorScheme.primary),
+    title: Text(label),
+    trailing: const Icon(Icons.chevron_right_rounded),
+    onTap: () => Navigator.pop(context, action),
+  );
+
+  Future<void> _changeLocalBookSource() async {
+    if (_changingBookSource) return;
+    _changingBookSource = true;
+    await _readerAloudController?.stop();
+    if (!mounted) return;
+    try {
+      final client = BookSourceClient();
+      final shelf = BookSourceShelfService(client: client);
+      final choice = await showShelfSourcePicker(
+        context,
+        anchor: widget.book,
+        client: client,
+        shelfService: shelf,
+      );
+      if (choice == null || !mounted) return;
+      final chapter = _loadedChapters.isEmpty
+          ? null
+          : _loadedChapters[_chapterIndex];
+      final prepared = await prepareShelfSourceChoice(
+        anchor: widget.book,
+        choice: choice,
+        client: client,
+        shelfService: shelf,
+        chapterTitle: chapter?.title ?? '',
+        chapterIndex: _chapterIndex,
+        chapterProgress: chapter == null || chapter.plainText.isEmpty
+            ? 0
+            : ((_anchorOffset ?? 0) / chapter.plainText.length).clamp(0, 1),
+      );
+      if (!mounted) return;
+      unawaited(_flushReadingSession());
+      unawaited(
+        Navigator.of(context).pushReplacement<void, void>(
+          MaterialPageRoute(builder: (_) => prepared.reader),
+        ),
+      );
+    } catch (error) {
+      if (mounted) {
+        showSideToast(context, '换源失败：$error', kind: SideToastKind.error);
+      }
+    } finally {
+      _changingBookSource = false;
+    }
+  }
+
   Future<void> _showReadingSettings() async {
     final selectedMode = await showModalBottomSheet<NativePageMode>(
       context: context,
@@ -2120,6 +2283,15 @@ class _NativeReaderPageState extends State<NativeReaderPage>
         dimNightText: _dimNightText,
         fontWeight: _fontWeight,
         showChapterProgress: _showChapterProgress,
+        textSelectionEnabled: _textSelectionEnabled,
+        edgeSwipeBackEnabled: _edgeSwipeBackEnabled,
+        hideBarsOnVerticalSwipe: _hideBarsOnVerticalSwipe,
+        onTextSelectionChanged: (value) =>
+            unawaited(_setInteractionSettings(selection: value)),
+        onEdgeSwipeBackChanged: (value) =>
+            unawaited(_setInteractionSettings(edgeBack: value)),
+        onHideBarsOnVerticalSwipeChanged: (value) =>
+            unawaited(_setInteractionSettings(hideBars: value)),
         onTextBrightnessChanged: (value) =>
             unawaited(_setTextAppearance(brightness: value)),
         onDimNightTextChanged: (value) =>
@@ -4449,7 +4621,7 @@ class _NativeReaderPageState extends State<NativeReaderPage>
       key: const ValueKey('reader-system-ui-region'),
       value: systemUiOverlayStyle,
       child: PopScope(
-        canPop: !_tapZoneEditorVisible,
+        canPop: (_edgeSwipeBackEnabled || _allowExit) && !_tapZoneEditorVisible,
         onPopInvokedWithResult: (didPop, _) {
           if (didPop) {
             BookOpenTransition.beginExit();
@@ -4749,6 +4921,12 @@ class _NativeReaderPageState extends State<NativeReaderPage>
                                   ),
                                   enabled: !_annotationInteractionActive,
                                   onTap: _handleReaderTap,
+                                  onEdgeBack: _edgeSwipeBackEnabled
+                                      ? () => unawaited(_exitReader())
+                                      : null,
+                                  onVerticalSwipe: _hideBarsOnVerticalSwipe
+                                      ? _hideReaderBars
+                                      : null,
                                   child: GestureDetector(
                                     behavior: HitTestBehavior.translucent,
                                     onHorizontalDragEnd:
@@ -4843,6 +5021,7 @@ class _NativeReaderPageState extends State<NativeReaderPage>
                                 ),
                                 askAiTooltip: context.l10n.readerAskAi,
                                 onSettings: _showReadingSettings,
+                                onMore: _showLocalBookSettings,
                                 chapterProgressLabel:
                                     _showChapterProgress &&
                                         _loadedChapters.isNotEmpty
